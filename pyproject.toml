@@ -1,0 +1,35 @@
+[project]
+name = "software-team"
+version = "0.1.0"
+description = "A multi-agent cross-functional software team (PM, UX, Tech Lead, SWE, QA, DevOps) built on LangChain + LangGraph, running on local Ollama models. Takes a spec file and drives a feature through the full SDLC (Plan -> Code -> Deploy -> Operate), generating a runnable project plus CI/CD and DevOps artifacts."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-ollama>=0.2.0",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rich>=13.7",
+    "pytest>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+]
+
+[project.scripts]
+software-team = "software_team.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/software_team"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
