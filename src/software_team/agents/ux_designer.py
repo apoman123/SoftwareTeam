@@ -8,9 +8,9 @@ this role keeps it lightweight (a reference client + flow), as a real team would
 from __future__ import annotations
 
 from .. import ui
-from ..skills import filesystem
+from ..skills.common import filesystem
 from ..skills.registry import skill_names
-from .base import generate, output_dir, relpath
+from .base import generate, output_dir, relpath, with_skills
 
 ROLE = "ux_designer"
 
@@ -32,7 +32,7 @@ def ux_designer_node(state: dict) -> dict:
         "Produce markdown with:\n## User Flow (numbered)\n"
         "## Wireframe (ASCII inside a code block)\n## Component / State Notes\n"
     )
-    doc = generate(ROLE, SYSTEM, user, state)
+    doc = generate(ROLE, with_skills(SYSTEM, ROLE), user, state)
     path = filesystem.write_doc(output_dir(state), "ux_design.md", doc)
     ui.written(relpath(state, [path]))
     return {"ux_design": doc, "current_phase": "plan"}

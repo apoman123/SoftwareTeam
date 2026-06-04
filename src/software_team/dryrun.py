@@ -8,7 +8,7 @@ isn't present). Live mode replaces all of this with actual model generations.
 
 from __future__ import annotations
 
-from .skills.authoring import file_blocks
+from .skills.common.authoring import file_blocks
 
 # --------------------------------------------------------------------------- #
 # Generated application source (Task API)

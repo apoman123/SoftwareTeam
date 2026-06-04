@@ -14,6 +14,15 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from ..llm import build_llm
+from ..skills.registry import guidance_for
+
+
+def with_skills(persona: str, character: str) -> str:
+    """Compose a character's persona with the best-practice guidance from its skills."""
+    guidance = guidance_for(character)
+    if not guidance:
+        return persona
+    return f"{persona}\n\nApply these skills and the technique behind each:\n{guidance}"
 
 
 def generate(role: str, system_prompt: str, user_prompt: str, state: dict) -> str:

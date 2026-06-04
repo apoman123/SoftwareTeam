@@ -1,8 +1,8 @@
-"""Shell skills — run commands and tests inside the generated workspace.
+"""Shell capabilities — run commands and tests inside the generated workspace.
 
 Used by QA (run the test suite) and by the SWE bug-fix loop. Commands run with the
-workspace as the working directory and a timeout, so `import app` resolves and runs
-are bounded.
+workspace as the working directory and a timeout, so `import app` resolves and runs are
+bounded.
 """
 
 from __future__ import annotations

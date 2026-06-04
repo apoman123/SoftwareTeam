@@ -25,8 +25,56 @@ catalogue.
 | 🚀 **DevOps / SRE** | Code/Deploy/Operate | `write_dockerfile`, `generate_ci_pipeline`, `generate_cd_pipeline`, `write_terraform`, `write_k8s_manifests`, `write_monitoring_config`, `write_runbook` |
 
 Skills come in two kinds: **tool-backed** skills that perform real I/O (writing files,
-running pytest — implemented as LangChain `@tool`s in `skills/filesystem.py` and
-`skills/shell.py`) and **reasoning** skills the LLM performs in-context.
+running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
+**reasoning** skills the LLM performs in-context.
+
+### The skills library (`src/software_team/skills/`)
+
+Skills follow the **Agent Skills convention** (as used by
+[forgecode's `create-skill`](https://github.com/tailcallhq/forgecode/tree/main/crates/forge_repo/src/skills/create-skill)):
+**each skill is a directory with a `SKILL.md`** — YAML frontmatter (`name`, a "use when"
+`description`, and an optional `tool:`) plus a concise markdown body of instructions.
+The bodies encode real, researched practice (INVEST, MoSCoW, Nielsen's heuristics, the
+C4 model, ADRs, equivalence partitioning / boundary-value analysis, the test pyramid,
+12-factor, the four golden signals, SLO/SLI/error budgets, blue-green/canary rollouts,
+…). At runtime each character's system prompt is **composed from its skills' bodies**, so
+the files in this directory actually drive behaviour — they are not just documentation.
+
+```
+skills/
+  base.py                     # the Skill dataclass + guidance composer
+  loader.py                   # discovers & parses SKILL.md frontmatter + body
+  registry.py                 # groups skills by character -> ROLE_SKILLS
+  common/                     # executable tools (filesystem, shell) + tool registry + authoring
+  library/                    # the SKILL.md skill library, one folder per character
+    product_manager/          #   parse-spec, write-user-stories, define-acceptance-criteria,
+                              #     prioritize-backlog, track-metrics
+    ux_designer/              #   map-user-flow, create-wireframe, specify-components,
+                              #     apply-usability-heuristics, ensure-accessibility
+    tech_lead/                #   select-tech-stack, design-architecture, write-adr,
+                              #     define-api-spec, design-db-schema, review-code, route-workflow
+    software_engineer/        #   scaffold-project, write-code, write-unit-tests,
+                              #     run-tests, fix-bug, manage-version-control
+    qa_engineer/              #   design-test-cases, write-e2e-tests, analyze-edge-cases,
+                              #     plan-performance-tests, execute-tests, inspect-project
+    devops_sre/               #   containerize-service, build-ci-pipeline, build-cd-pipeline,
+                              #     write-infrastructure-code, write-k8s-manifests,
+                              #     configure-observability, write-runbook
+```
+
+A skill becomes **tool-backed** by naming a tool in its frontmatter (e.g. `tool: run_tests`);
+the loader resolves it against `common/tools.py` and binds the real LangChain `@tool`.
+
+**Add a skill**: create `library/<character>/<verb-based-name>/SKILL.md` with `name` +
+`description` frontmatter and a short instructions body. It is loaded automatically — no
+code change. Add `tool: <name>` to make it executable.
+
+Sources for the practices baked into the skill bodies:
+[INVEST](https://www.volkerdon.com/pages/invest-criteria) ·
+[MoSCoW / acceptance criteria](https://www.atlassian.com/work-management/project-management/acceptance-criteria) ·
+[C4 model + ADRs](https://medium.com/decathlondigital/software-architecture-architecture-decision-record-c4-11ceff211baf) ·
+[test design techniques](https://www.qamadness.com/5-essential-test-design-techniques-qa-2026/) ·
+[SRE golden signals / SLOs](https://medium.com/@sainath.814/devops-roadmap-part-32-sre-fundamentals-slis-slos-error-budgets-incident-response-abc3c4f7db01).
 
 ## Workflow (LangGraph)
 
@@ -123,7 +171,7 @@ src/software_team/
   llm.py         # ChatOllama factory + dry-run stub
   dryrun.py      # canned artifacts for --dry-run
   ui.py          # console reporting
-  skills/        # filesystem, shell, authoring, registry (role→skills)
+  skills/        # SKILL.md library (loader, registry, common tools) — one folder per character
   agents/        # the six characters (one file each) + base helpers
   graph.py       # LangGraph StateGraph wiring the phases + loops
   main.py        # Typer CLI

@@ -1,7 +1,8 @@
 """Authoring helpers shared by agents and the dry-run stub.
 
-These are pure text utilities: a small "file block" protocol the code-producing agents
-use to emit multiple files in one response, plus extractors for fenced code blocks.
+Pure text utilities: a small "file block" protocol the code-producing agents use to emit
+multiple files in one response, plus extractors for fenced code blocks and markdown
+sections.
 """
 
 from __future__ import annotations

@@ -2,8 +2,8 @@
 
 import pytest
 
-from software_team.skills import filesystem
-from software_team.skills.authoring import extract_fenced, file_blocks, parse_file_blocks
+from software_team.skills.common import filesystem
+from software_team.skills.common.authoring import extract_fenced, file_blocks, parse_file_blocks
 
 
 def test_file_block_roundtrip():
@@ -28,3 +28,37 @@ def test_write_files_creates_tree(tmp_path):
 def test_write_refuses_path_traversal(tmp_path):
     with pytest.raises(ValueError):
         filesystem.write_file(str(tmp_path), "../escape.py", "nope")
+
+
+def test_every_character_loads_its_skill_md_library():
+    from software_team.skills.registry import ROLE_SKILLS, guidance_for, tools_for
+
+    expected = {
+        "product_manager", "ux_designer", "tech_lead",
+        "software_engineer", "qa_engineer", "devops_sre",
+    }
+    assert set(ROLE_SKILLS) == expected
+    for role, skills in ROLE_SKILLS.items():
+        assert skills, f"{role} has no skills"
+        for s in skills:
+            # Every SKILL.md provides the required frontmatter + an instructions body.
+            assert s.name and s.description, f"{role}/{s.path} missing name or description"
+            assert s.body.strip(), f"{role}/{s.name} has an empty body"
+            assert s.path and s.path.endswith("SKILL.md")
+        assert guidance_for(role).strip()
+
+    # The hands-on roles expose executable, tool-backed skills (bound via frontmatter).
+    for role in ("software_engineer", "qa_engineer", "devops_sre"):
+        assert tools_for(role), f"{role} should have tool-backed skills"
+
+
+def test_skill_md_frontmatter_and_tool_binding():
+    from software_team.skills.loader import load_character_skills
+
+    swe = {s.name: s for s in load_character_skills("software_engineer")}
+    # Verb-based names per the Agent Skills convention.
+    assert "write-code" in swe and "run-tests" in swe
+    # `tool:` frontmatter binds a real LangChain tool; reasoning skills bind none.
+    assert swe["write-code"].tool is not None
+    assert swe["write-code"].kind == "tool"
+    assert swe["scaffold-project"].tool is None

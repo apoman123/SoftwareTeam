@@ -8,10 +8,10 @@ team builds against.
 from __future__ import annotations
 
 from .. import ui
-from ..skills import filesystem
-from ..skills.authoring import extract_section
+from ..skills.common import filesystem
+from ..skills.common.authoring import extract_section
 from ..skills.registry import skill_names
-from .base import generate, output_dir, relpath
+from .base import generate, output_dir, relpath, with_skills
 
 ROLE = "product_manager"
 
@@ -37,7 +37,7 @@ def product_manager_node(state: dict) -> dict:
         "## Acceptance Criteria (Gherkin) with a ```gherkin block\n"
         "## Prioritised Backlog (MoSCoW)\n"
     )
-    doc = generate(ROLE, SYSTEM, user, state)
+    doc = generate(ROLE, with_skills(SYSTEM, ROLE), user, state)
     path = filesystem.write_doc(output_dir(state), "product_backlog.md", doc)
     ui.written(relpath(state, [path]))
     return {

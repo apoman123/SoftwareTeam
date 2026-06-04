@@ -9,10 +9,9 @@ a product-metrics summary feeding the next cycle.
 from __future__ import annotations
 
 from .. import ui
-from ..skills import filesystem
-from ..skills.authoring import parse_file_blocks
-from ..skills.registry import skill_names
-from .base import generate, output_dir, relpath
+from ..skills.common import filesystem
+from ..skills.common.authoring import parse_file_blocks
+from .base import generate, output_dir, relpath, with_skills
 
 ROLE = "devops_sre"
 
@@ -33,7 +32,7 @@ config (monitoring/prometheus.yml), alert rules for error-rate and latency
 
 
 def _emit(state: dict, role: str, system: str, user: str) -> dict[str, str]:
-    text = generate(role, system, user, state)
+    text = generate(role, with_skills(system, ROLE), user, state)
     files = parse_file_blocks(text)
     if files:
         ui.written(relpath(state, filesystem.write_files(output_dir(state), files)))
@@ -43,7 +42,7 @@ def _emit(state: dict, role: str, system: str, user: str) -> dict[str, str]:
 
 
 def devops_ci_node(state: dict) -> dict:
-    ui.announce(ROLE, "code", "Containerising and wiring up CI", ["write_dockerfile", "generate_ci_pipeline"])
+    ui.announce(ROLE, "code", "Containerising and wiring up CI", ["containerize-service", "build-ci-pipeline"])
     files = _emit(
         state, "devops_ci", CI_SYSTEM,
         "Containerise this Python service and set up CI. The app runs with "
@@ -61,7 +60,7 @@ def devops_cd_node(state: dict) -> dict:
     ui.announce(
         ROLE, "deploy",
         "Building CD pipeline, IaC and Kubernetes manifests",
-        ["generate_cd_pipeline", "write_terraform", "write_k8s_manifests"],
+        ["build-cd-pipeline", "write-infrastructure-code", "write-k8s-manifests"],
     )
     files = _emit(
         state, "devops_cd", CD_SYSTEM,
@@ -81,7 +80,7 @@ def operate_node(state: dict) -> dict:
     ui.announce(
         ROLE, "operate",
         "Standing up monitoring, alerts and a runbook; running a post-deploy health check",
-        ["write_monitoring_config", "write_runbook"],
+        ["configure-observability", "write-runbook"],
     )
     files = _emit(
         state, "operate", OPERATE_SYSTEM,

@@ -17,7 +17,7 @@ from rich.markdown import Markdown
 
 from .config import SETTINGS
 from .graph import build_graph
-from .skills import filesystem
+from .skills.common import filesystem
 from .skills.registry import skills_catalog
 from .state import new_state
 

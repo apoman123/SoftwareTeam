@@ -13,10 +13,9 @@ from __future__ import annotations
 
 from .. import ui
 from ..config import SETTINGS
-from ..skills import filesystem
-from ..skills.authoring import extract_fenced, extract_section
-from ..skills.registry import skill_names
-from .base import generate, output_dir, relpath
+from ..skills.common import filesystem
+from ..skills.common.authoring import extract_fenced, extract_section
+from .base import generate, output_dir, relpath, with_skills
 
 ROLE = "tech_lead"
 
@@ -36,7 +35,7 @@ def tech_lead_design_node(state: dict) -> dict:
     ui.announce(
         ROLE, "plan",
         "Selecting the stack and designing architecture, API contract and DB schema",
-        ["select_tech_stack", "design_architecture", "define_api_spec", "design_db_schema"],
+        ["select-tech-stack", "design-architecture", "define-api-spec", "design-db-schema"],
     )
     user = (
         "Design the system for these requirements and UX.\n\n"
@@ -45,7 +44,7 @@ def tech_lead_design_node(state: dict) -> dict:
         "Produce markdown with: ## Tech Stack, ## Architecture (mermaid), "
         "## API Specification (```yaml OpenAPI), ## Data Schema (```sql)."
     )
-    doc = generate("tech_lead_design", DESIGN_SYSTEM, user, state)
+    doc = generate("tech_lead_design", with_skills(DESIGN_SYSTEM, ROLE), user, state)
 
     out = output_dir(state)
     written = [filesystem.write_doc(out, "architecture.md", doc)]
@@ -68,7 +67,7 @@ def tech_lead_design_node(state: dict) -> dict:
 
 def tech_lead_review_node(state: dict) -> dict:
     iters = state.get("review_iters", 0) + 1
-    ui.announce(ROLE, "code", f"Code review (pass {iters})", ["code_review", "route_workflow"])
+    ui.announce(ROLE, "code", f"Code review (pass {iters})", ["review-code", "route-workflow"])
     files = state.get("source_files", {})
     listing = "\n\n".join(f"# {p}\n```\n{c}\n```" for p, c in files.items())
     user = (
@@ -76,7 +75,7 @@ def tech_lead_review_node(state: dict) -> dict:
         f"### Acceptance Criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"### Code\n{listing}\n"
     )
-    verdict = generate("tech_lead_review", REVIEW_SYSTEM, user, state)
+    verdict = generate("tech_lead_review", with_skills(REVIEW_SYSTEM, ROLE), user, state)
     status = "changes" if "review_status: changes" in verdict.lower() else "approve"
     ui.note(f"verdict: [bold]{status}[/bold]")
     return {"review_notes": verdict, "review_status": status, "review_iters": iters}

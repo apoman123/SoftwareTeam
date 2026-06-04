@@ -1,8 +1,8 @@
-"""Filesystem skills — persist artifacts and source files into the output workspace.
+"""Filesystem capabilities — persist artifacts and source files into the workspace.
 
 Exposed both as plain functions (used by the deterministic orchestration) and as
-LangChain `@tool`s (so the SWE/QA ReAct loop can call them when using a tool-capable
-model). All writes are confined to the run's output directory.
+LangChain `@tool`s (so a tool-capable model can call them in a ReAct loop). All writes
+are confined to the run's output directory.
 """
 
 from __future__ import annotations

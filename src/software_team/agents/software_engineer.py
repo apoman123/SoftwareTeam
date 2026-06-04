@@ -9,10 +9,10 @@ workspace.
 from __future__ import annotations
 
 from .. import ui
-from ..skills import filesystem
-from ..skills.authoring import parse_file_blocks
+from ..skills.common import filesystem
+from ..skills.common.authoring import parse_file_blocks
 from ..skills.registry import skill_names
-from .base import generate, output_dir, relpath
+from .base import generate, output_dir, relpath, with_skills
 
 ROLE = "software_engineer"
 
@@ -58,7 +58,7 @@ def software_engineer_node(state: dict) -> dict:
     if state.get("review_status") == "changes" and state.get("review_notes"):
         user += f"\n\n### Address this review feedback\n{state['review_notes']}"
 
-    text = generate(ROLE, BUILD_SYSTEM, user, state)
+    text = generate(ROLE, with_skills(BUILD_SYSTEM, ROLE), user, state)
     files = _persist_blocks(state, text)
     unit_tests = "\n\n".join(c for p, c in files.items() if "test" in p)
     return {"source_files": files, "unit_tests": unit_tests, "current_phase": "code"}
@@ -66,7 +66,7 @@ def software_engineer_node(state: dict) -> dict:
 
 def software_engineer_fix_node(state: dict) -> dict:
     iters = state.get("fix_iters", 0) + 1
-    ui.announce(ROLE, "deploy", f"Fixing failing tests (hotfix pass {iters})", ["fix_bug", "run_tests"])
+    ui.announce(ROLE, "deploy", f"Fixing failing tests (hotfix pass {iters})", ["fix-bug", "run-tests"])
     listing = "\n\n".join(f"# {p}\n```\n{c}\n```" for p, c in state.get("source_files", {}).items())
     user = (
         "The test suite failed. Fix the code.\n\n"
@@ -74,6 +74,6 @@ def software_engineer_fix_node(state: dict) -> dict:
         f"### Current files\n{listing}\n\n"
         f"{FILE_PROTOCOL}"
     )
-    text = generate("software_engineer_fix", FIX_SYSTEM, user, state)
+    text = generate("software_engineer_fix", with_skills(FIX_SYSTEM, ROLE), user, state)
     files = _persist_blocks(state, text)
     return {"source_files": files, "fix_iters": iters, "current_phase": "deploy"}

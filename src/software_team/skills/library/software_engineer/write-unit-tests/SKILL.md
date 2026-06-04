@@ -1,0 +1,13 @@
+---
+name: write-unit-tests
+description: Use when implementing logic, to write fast, isolated unit tests that form the base of the test pyramid.
+---
+
+# Write unit tests
+
+Write fast, isolated unit tests for the business logic with pytest.
+
+- Follow **Arrange-Act-Assert**, one behaviour per test.
+- Cover **error paths** as well as the happy path.
+- Test the **framework-free core directly** so tests stay fast and stable (the broad base
+  of the test pyramid).
