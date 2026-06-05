@@ -1,7 +1,11 @@
 """CLI entrypoint.
 
     software-team run --spec examples/sample_spec.md [--out workspace] [--dry-run]
+    software-team run --prompt "Build a URL shortener with click analytics"
     software-team skills        # print each character's skill set
+
+The team can be handed work in two ways: a written spec **file** (``--spec``) or a
+**prompt** typed directly on the command line (``--prompt``). Exactly one is required.
 
 `--dry-run` swaps every LLM for a deterministic stub so the full pipeline and file
 generation can be exercised with no Ollama server running.
@@ -15,6 +19,7 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 
+from . import intake
 from .config import SETTINGS
 from .graph import build_graph
 from .skills.common import filesystem
@@ -27,14 +32,25 @@ console = Console()
 
 @app.command()
 def run(
-    spec: Path = typer.Option(
-        ..., "--spec", "-s", exists=True, readable=True, help="Spec/use-case file"
+    spec: Path | None = typer.Option(
+        None, "--spec", "-s", exists=True, readable=True, help="Spec/use-case file to build from"
+    ),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="Describe the feature directly, instead of a spec file"
     ),
     out: Path = typer.Option(Path("workspace"), "--out", "-o", help="Output workspace directory"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Use canned outputs (no Ollama needed)"),
 ) -> None:
-    """Drive a feature through the full SDLC and generate the project + DevOps artifacts."""
-    spec_text = spec.read_text(encoding="utf-8")
+    """Drive a feature through the full SDLC and generate the project + DevOps artifacts.
+
+    Hand the team its work either as a spec file (``--spec``) or as a direct feature
+    prompt (``--prompt``); exactly one is required.
+    """
+    try:
+        request = intake.resolve(spec, prompt)
+    except intake.IntakeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
     out.mkdir(parents=True, exist_ok=True)
 
     if dry_run:
@@ -47,9 +63,11 @@ def run(
             f"narrative=[cyan]{SETTINGS.narrative_model}[/cyan] "
             f"search=[cyan]{search}[/cyan]"
         )
-    console.rule(f"[bold]Software Team[/bold] · spec=[green]{spec}[/green] · {mode}")
+    console.rule(
+        f"[bold]Software Team[/bold] · {request.origin}=[green]{request.display}[/green] · {mode}"
+    )
 
-    state = new_state(str(spec), spec_text, str(out))
+    state = new_state(request.label, request.text, str(out))
     state["dry_run"] = dry_run
 
     graph = build_graph()

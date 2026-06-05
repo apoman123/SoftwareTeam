@@ -1,10 +1,11 @@
 # Software Team — a multi-agent SDLC crew (LangChain + LangGraph)
 
 A cross-functional, "you build it, you run it" software team, implemented as a
-multi-agent system. Hand it a spec file describing your use cases and six AI characters
-carry the feature through the whole software lifecycle — Plan & Design → Code & Build →
-Deploy & Release → Operate & Monitor — writing a runnable project plus all its CI/CD and
-DevOps artifacts to a workspace directory.
+multi-agent system. Tell the Product Manager what you want — either a spec **file**
+describing your use cases, or a one-line feature **prompt** on the command line — and six
+AI characters carry the feature through the whole software lifecycle — Plan & Design →
+Code & Build → Deploy & Release → Operate & Monitor — writing a runnable project plus all
+its CI/CD and DevOps artifacts to a workspace directory.
 
 Highlights:
 
@@ -112,6 +113,9 @@ uv run software-team run --spec examples/sample_spec.md --dry-run
 ./scripts/setup.sh                 # installs models: qwen2.5-coder:7b, llama3.1:8b
 uv run software-team run --spec examples/sample_spec.md
 
+# Or skip the file and just tell the PM what to build with a prompt:
+uv run software-team run --prompt "Build a URL shortener with click analytics" --dry-run
+
 # Other backends (set SWTEAM_LLM_PROVIDER, install the matching extra):
 #   uv sync --extra openai     && SWTEAM_LLM_PROVIDER=openai     OPENAI_API_KEY=...  uv run software-team run -s examples/sample_spec.md
 #   uv sync --extra google     && SWTEAM_LLM_PROVIDER=google     GOOGLE_API_KEY=...  uv run software-team run -s examples/sample_spec.md
@@ -130,8 +134,17 @@ uv run software-team skills
 
 ### Input
 
-The Product Manager consumes a plain markdown/text **spec file** of use cases — see
-`examples/sample_spec.md`. Point `--spec` at your own file to build something else.
+There are two ways to tell the Product Manager what to build; provide exactly one:
+
+- **A spec file** — point `--spec` at a plain markdown/text file of use cases (see
+  `examples/sample_spec.md`). Best for anything with multiple use cases, non-functional
+  requirements, or out-of-scope notes.
+- **A prompt** — pass `--prompt "…"` to describe the feature inline. Handy for a quick,
+  one-line feature request without writing a file first.
+
+Either way the request becomes the same `spec_text` the PM turns into requirements, so
+the rest of the pipeline is identical. The intake logic lives in
+`src/software_team/intake.py`.
 
 ### Output (`workspace/`)
 
@@ -197,6 +210,7 @@ Copy `.env.example` and adjust. Key variables:
 ```text
 src/software_team/
   config.py      # LLM provider, per-role model tiers, web search, paths, loop caps
+  intake.py      # resolve the feature request from a --spec file or a --prompt
   state.py       # TeamState blackboard
   llm.py         # multi-provider chat-model factory (ollama/openai/google/llama_cpp) + dry-run stub
   dryrun.py      # canned artifacts for --dry-run
