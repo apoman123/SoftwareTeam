@@ -101,3 +101,44 @@ def test_skill_md_frontmatter_and_tool_binding():
     assert swe["write-code"].tool is not None
     assert swe["write-code"].kind == "tool"
     assert swe["scaffold-project"].tool is None
+
+
+def test_shared_skills_loaded_by_mapped_characters_only():
+    from software_team.skills.loader import (
+        SHARED,
+        SHARED_SKILLS,
+        load_character_skills,
+    )
+
+    # Every shared skill referenced by the mapping exists on disk with a parseable body.
+    for names in SHARED_SKILLS.values():
+        for name in names:
+            assert (SHARED / name / "SKILL.md").exists(), f"missing shared skill: {name}"
+
+    loaded = {role: {s.name for s in load_character_skills(role)} for role in SHARED_SKILLS}
+
+    # Each character loads exactly the shared skills mapped to it.
+    for role, names in SHARED_SKILLS.items():
+        assert set(names) <= loaded[role], f"{role} missing its shared skills"
+
+    # The GitLab + Jenkins CI/CD skills land on DevOps; quality/review skills on the lead.
+    assert {"jenkins-expert", "ci-cd-and-automation", "gitlab-pipeline-watch"} <= loaded[
+        "devops_sre"
+    ]
+    assert {"code-review-and-quality", "mr-review"} <= loaded["tech_lead"]
+
+    # `glab` is shared (no duplication on disk) by the engineer and DevOps.
+    assert "glab" in loaded["software_engineer"] and "glab" in loaded["devops_sre"]
+
+    # Characters not in the mapping pick up no shared skills.
+    pm = {s.name for s in load_character_skills("product_manager")}
+    assert pm.isdisjoint({n for names in SHARED_SKILLS.values() for n in names})
+
+
+def test_code_authors_still_load_foundation_before_shared_skills():
+    from software_team.skills.loader import FOUNDATION_SKILLS, load_character_skills
+
+    # Foundation skills stay first even though shared skills are appended last.
+    names = [s.name for s in load_character_skills("devops_sre")]
+    assert names[:2] == list(FOUNDATION_SKILLS)
+    assert names[-1] == "glab"  # shared skills compose after the role skills

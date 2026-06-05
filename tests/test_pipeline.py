@@ -27,8 +27,8 @@ def test_full_pipeline_dry_run(tmp_path):
         "tests/test_service.py",
         "tests/test_e2e.py",
         "Dockerfile",
-        ".github/workflows/ci.yml",
-        ".github/workflows/cd.yml",
+        ".gitlab-ci.yml",
+        "Jenkinsfile",
         "terraform/main.tf",
         "k8s/deployment.yaml",
         "monitoring/prometheus.yml",
@@ -43,3 +43,12 @@ def test_full_pipeline_dry_run(tmp_path):
     ]
     for rel in expected:
         assert (tmp_path / rel).exists(), f"missing artifact: {rel}"
+
+    # GitLab CI is wired to Jenkins: the pipeline triggers a Jenkins build, and the
+    # Jenkinsfile is a declarative pipeline that deploys with an automatic rollback.
+    gitlab_ci = (tmp_path / ".gitlab-ci.yml").read_text()
+    assert "trigger-jenkins" in gitlab_ci
+    assert "JENKINS_URL" in gitlab_ci
+    jenkinsfile = (tmp_path / "Jenkinsfile").read_text()
+    assert "pipeline {" in jenkinsfile
+    assert "rollout undo" in jenkinsfile

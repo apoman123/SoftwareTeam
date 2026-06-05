@@ -247,41 +247,172 @@ COPY . .
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 """,
-    ".github/workflows/ci.yml": """\
-name: CI
-on:
-  pull_request:
-  push:
-    branches: [main]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - run: ruff check . || true
-      - run: pytest -q
+    # GitLab CI/CD gates the merge request (lint + test), then hands off to Jenkins via the
+    # remote build API. $JENKINS_URL / $JENKINS_TOKEN are masked GitLab CI/CD variables.
+    ".gitlab-ci.yml": """\
+stages:
+  - lint
+  - test
+  - integrate
+
+default:
+  image: python:3.12-slim
+  before_script:
+    - pip install --no-cache-dir -r requirements.txt
+
+lint:
+  stage: lint
+  script:
+    - pip install ruff
+    - ruff check .
+
+test:
+  stage: test
+  script:
+    - pytest -q
+
+trigger-jenkins:
+  stage: integrate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - >
+      curl --fail -X POST
+      "$JENKINS_URL/job/task-api/buildWithParameters?token=$JENKINS_TOKEN&ref=$CI_COMMIT_REF_NAME&sha=$CI_COMMIT_SHA"
+""",
+    # Jenkins runs the heavier build; secrets come from the Jenkins credential store.
+    "Jenkinsfile": """\
+pipeline {
+  agent any
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+    stage('Install') {
+      steps {
+        sh 'pip install --no-cache-dir -r requirements.txt'
+      }
+    }
+    stage('Quality') {
+      parallel {
+        stage('Lint') {
+          steps {
+            sh 'pip install ruff && ruff check .'
+          }
+        }
+        stage('Test') {
+          steps {
+            sh 'pytest -q'
+          }
+        }
+      }
+    }
+  }
+  post {
+    success {
+      echo 'CI green — reporting success back to the GitLab merge request.'
+    }
+    failure {
+      echo 'CI failed — blocking the merge request.'
+    }
+  }
+}
 """,
 }
 
 CD_FILES = {
-    ".github/workflows/cd.yml": """\
-name: CD
-on:
-  push:
-    branches: [main]
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t task-api:${{ github.sha }} .
-      - name: Deploy (canary -> full)
-        run: echo "kubectl set image deploy/task-api task-api=task-api:${{ github.sha }}"
+    # The full GitLab pipeline: the CI stages plus a manual production deploy that triggers
+    # the Jenkins deploy job (canary rollout). Same image artifact is promoted through.
+    ".gitlab-ci.yml": """\
+stages:
+  - lint
+  - test
+  - integrate
+  - deploy
+
+default:
+  image: python:3.12-slim
+  before_script:
+    - pip install --no-cache-dir -r requirements.txt
+
+lint:
+  stage: lint
+  script:
+    - pip install ruff
+    - ruff check .
+
+test:
+  stage: test
+  script:
+    - pytest -q
+
+trigger-jenkins:
+  stage: integrate
+  script:
+    - >
+      curl --fail -X POST
+      "$JENKINS_URL/job/task-api/buildWithParameters?token=$JENKINS_TOKEN&ref=$CI_COMMIT_REF_NAME&sha=$CI_COMMIT_SHA"
+
+deploy-production:
+  stage: deploy
+  environment:
+    name: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  script:
+    - >
+      curl --fail -X POST
+      "$JENKINS_URL/job/task-api-deploy/buildWithParameters?token=$JENKINS_TOKEN&sha=$CI_COMMIT_SHA&strategy=canary"
+""",
+    # Jenkins owns build + deploy with a safe rollout and an automatic rollback on failure.
+    "Jenkinsfile": """\
+pipeline {
+  agent any
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
+  environment {
+    IMAGE = "task-api:${env.GIT_COMMIT}"
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+    stage('Build image') {
+      steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'registry',
+            usernameVariable: 'REG_USER',
+            passwordVariable: 'REG_PASS')]) {
+          sh 'docker build -t $IMAGE .'
+        }
+      }
+    }
+    stage('Deploy (canary -> full)') {
+      steps {
+        sh 'kubectl set image deploy/task-api task-api=$IMAGE -n task-api'
+        sh 'kubectl rollout status deploy/task-api -n task-api --timeout=120s'
+      }
+    }
+  }
+  post {
+    failure {
+      echo 'Health check failed — rolling back.'
+      sh 'kubectl rollout undo deploy/task-api -n task-api'
+    }
+  }
+}
 """,
     "terraform/main.tf": """\
 terraform {
@@ -600,11 +731,14 @@ _INFRA_DOC = """\
 Where and how the service runs, for on-call and platform engineers. Pair this with the
 [on-call runbook](runbook.md), which covers what to do when an alert fires.
 
-## Pipelines
-- **CI** (`.github/workflows/ci.yml`) — on every pull request: install deps, lint, and
-  run `pytest`. A green CI gates merges to `main`.
-- **CD** (`.github/workflows/cd.yml`) — on push to `main`: build the container image and
-  roll it out (canary → full).
+## Pipelines (GitLab CI integrated with Jenkins)
+- **GitLab CI** (`.gitlab-ci.yml`) — on every merge request: install deps, lint, and run
+  `pytest`. A green pipeline gates merges to `main`. Its final `trigger-jenkins` job calls
+  Jenkins' remote build API (`$JENKINS_URL` / `$JENKINS_TOKEN` are masked CI/CD variables),
+  and a manual `deploy-production` job triggers the Jenkins deploy job on `main`.
+- **Jenkins** (`Jenkinsfile`) — a Declarative pipeline that runs the heavier build and
+  deploy: build the image, roll it out (canary → full), and automatically roll back on a
+  failed health check. Secrets come from the Jenkins credential store, never git.
 
 ## Container image
 - Built from `python:3.12-slim` (see `Dockerfile`); started with
@@ -621,8 +755,9 @@ Where and how the service runs, for on-call and platform engineers. Pair this wi
 ## Configuration
 | Variable | Where it lives | Purpose |
 |----------|----------------|---------|
-| `IMAGE_TAG` | CD pipeline (`github.sha`) | Image version to deploy |
-| Secrets | CI/CD secret store (never in git) | Registry / cloud credentials |
+| `CI_COMMIT_SHA` | GitLab CI (built-in) | Image version/tag to deploy |
+| `JENKINS_URL` / `JENKINS_TOKEN` | GitLab CI/CD variables (masked) | Trigger the Jenkins job |
+| Registry / cloud creds | Jenkins credential store (never git) | Push images, deploy |
 
 ## Rollout & rollback
 - **Rollout:** canary first, then promote to full once healthy.

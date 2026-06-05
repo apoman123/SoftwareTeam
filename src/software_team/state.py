@@ -62,6 +62,8 @@ class TeamState(TypedDict, total=False):
     dockerfile: str
     ci_config: str
     cd_config: str
+    gitlab_ci: str  # .gitlab-ci.yml — GitLab CI/CD that triggers Jenkins
+    jenkinsfile: str  # Declarative Jenkins pipeline driven from GitLab CI
     iac: str
     k8s: str
     monitoring: str

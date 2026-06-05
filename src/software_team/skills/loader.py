@@ -8,6 +8,13 @@ results by character so each character loads exactly its corresponding skills.
 Characters that author code (see ``CODE_AUTHORS``) additionally load the cross-cutting
 ``_foundation`` skills *first* — Karpathy's guidelines, then the Google style guide — so
 their engineering baseline frames every role-specific skill that follows.
+
+A third area, ``library/_shared/``, holds externally-sourced skills (each ``SKILL.md``
+cites its upstream project and licence) that several — but not all — characters reuse.
+``SHARED_SKILLS`` maps each character to the shared skills it loads, so a single on-disk
+copy serves every character that needs it (e.g. the ``glab`` GitLab CLI skill is loaded by
+both the Software Engineer and DevOps/SRE). They are composed *after* a character's own
+role skills, as cross-cutting reference material.
 """
 
 from __future__ import annotations
@@ -39,6 +46,29 @@ CODE_AUTHORS = frozenset({"software_engineer", "qa_engineer", "devops_sre"})
 # ``library/_foundation/`` rather than under any single character because they are shared.
 FOUNDATION = LIBRARY / "_foundation"
 FOUNDATION_SKILLS = ("karpathy-guidelines", "follow-google-style")
+
+# Externally-sourced skills (each SKILL.md cites its upstream project + MIT licence) kept
+# in one place and loaded by the specific characters that need them. The mapping is the
+# single source of truth for "which agent loads which shared skill"; the skills compose
+# after a character's own role skills. Adding a name here makes that character load it —
+# no other code change. Sources: jenkins-expert (0xfurai/claude-code-subagents);
+# ci-cd-and-automation, security-and-hardening, git-workflow-and-versioning,
+# code-review-and-quality, documentation-and-adrs, performance-optimization
+# (addyosmani/agent-skills); gitlab-pipeline-watch, glab, commit-messages, mr-review,
+# self-service-performance-testing (gitlab-org/ai/skills).
+SHARED = LIBRARY / "_shared"
+SHARED_SKILLS: dict[str, tuple[str, ...]] = {
+    "tech_lead": ("code-review-and-quality", "documentation-and-adrs", "mr-review"),
+    "software_engineer": ("git-workflow-and-versioning", "commit-messages", "glab"),
+    "qa_engineer": ("performance-optimization", "self-service-performance-testing"),
+    "devops_sre": (
+        "jenkins-expert",
+        "ci-cd-and-automation",
+        "security-and-hardening",
+        "gitlab-pipeline-watch",
+        "glab",
+    ),
+}
 
 
 def _parse_skill_md(md_path: Path) -> Skill:
@@ -75,29 +105,46 @@ def _foundation_skills() -> list[Skill]:
     return skills
 
 
+def _shared_skills(character: str) -> list[Skill]:
+    """Load the externally-sourced ``_shared`` skills assigned to ``character``.
+
+    Args:
+        character: The character key to look up in ``SHARED_SKILLS``.
+
+    Returns:
+        The character's shared skills that exist on disk, in ``SHARED_SKILLS`` order.
+    """
+    skills: list[Skill] = []
+    for name in SHARED_SKILLS.get(character, ()):
+        md = SHARED / name / "SKILL.md"
+        if md.exists():
+            skills.append(_parse_skill_md(md))
+    return skills
+
+
 def load_character_skills(character: str) -> list[Skill]:
     """Load and parse every ``SKILL.md`` for ``character``, sorted by skill directory.
 
-    Code-authoring characters (``CODE_AUTHORS``) get the shared ``_foundation`` skills
-    prepended, so their engineering baseline is composed before their own skills.
+    Composition order is: the shared ``_foundation`` skills first for code-authoring
+    characters (``CODE_AUTHORS``) so their engineering baseline frames everything, then the
+    character's own role skills, then any externally-sourced ``_shared`` skills assigned to
+    it in ``SHARED_SKILLS``.
 
     Args:
         character: The character key whose skills to load.
 
     Returns:
-        The character's skills; for code authors, the foundation skills come first.
+        The character's composed skill list in load order.
     """
+    role_skills: list[Skill] = []
     base = LIBRARY / character
-    if not base.exists():
-        return []
-    skills: list[Skill] = []
-    for skill_dir in sorted(path for path in base.iterdir() if path.is_dir()):
-        md = skill_dir / "SKILL.md"
-        if md.exists():
-            skills.append(_parse_skill_md(md))
-    if character in CODE_AUTHORS:
-        return _foundation_skills() + skills
-    return skills
+    if base.exists():
+        for skill_dir in sorted(path for path in base.iterdir() if path.is_dir()):
+            md = skill_dir / "SKILL.md"
+            if md.exists():
+                role_skills.append(_parse_skill_md(md))
+    foundation = _foundation_skills() if character in CODE_AUTHORS else []
+    return foundation + role_skills + _shared_skills(character)
 
 
 def load_all() -> dict[str, list[Skill]]:

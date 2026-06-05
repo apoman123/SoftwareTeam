@@ -36,6 +36,12 @@ catalogue.
 | 🧪 **QA / SDET** | Plan + Deploy + Document | `design-test-cases`, `analyze-edge-cases`, `write-e2e-tests`, `plan-performance-tests`, `execute-tests`, `inspect-project`, `write-test-report` |
 | 🚀 **DevOps / SRE** | Code + Deploy + Operate + Document | `containerize-service`, `build-ci-pipeline`, `build-cd-pipeline`, `write-infrastructure-code`, `write-k8s-manifests`, `configure-observability`, `write-runbook`, `document-infrastructure` |
 
+The CI/CD that DevOps/SRE generates is **GitLab CI integrated with Jenkins**: a
+`.gitlab-ci.yml` lints and tests every merge request and then triggers a `Jenkinsfile`
+(Declarative pipeline) for the heavier build and a safe, rollback-capable deploy. Several
+characters also load **external, attributed skills** (Jenkins, GitLab, code-review,
+performance) — see [External skills](#external-skills-shared-with-attribution) below.
+
 Skills come in two kinds: **tool-backed** skills that perform real I/O (writing files,
 running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
 **reasoning** skills that the LLM performs in context.
@@ -44,7 +50,9 @@ running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
 💻 Software Engineer, 🧪 QA/SDET, and 🚀 DevOps/SRE — additionally load two shared
 **foundation** skills *first*, before any role-specific skill: `karpathy-guidelines`
 (behaviour rules that cut common LLM coding mistakes — think before coding, keep it
-simple, make surgical changes, work to verifiable goals) and then `follow-google-style`
+simple, make surgical changes, work to verifiable goals; adapted from
+[multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines),
+after [Andrej Karpathy](https://x.com/karpathy/status/2015883857489522876)) and then `follow-google-style`
 (write every file to the [Google style guide](https://google.github.io/styleguide/) for
 its language). They live in `skills/library/_foundation/` because they are cross-cutting,
 and the loader prepends them for the `CODE_AUTHORS` set so the engineering baseline frames
@@ -82,9 +90,34 @@ skills/
   common/        # executable tools (filesystem, shell, web search), tool registry, authoring
   library/       # the SKILL.md library — one folder per character, one folder per skill
     _foundation/        # shared skills the code authors load first (karpathy-guidelines, follow-google-style)
+    _shared/            # externally-sourced skills several characters reuse (see "External skills" below)
     product_manager/    ux_designer/    tech_lead/
     software_engineer/  qa_engineer/    devops_sre/
 ```
+
+### External skills (shared, with attribution)
+
+Some skills are adapted from excellent open-source skill collections rather than authored
+from scratch. They live in `library/_shared/` (one on-disk copy, MIT-licensed sources
+cited in each `SKILL.md`) and `loader.py`'s **`SHARED_SKILLS`** map decides which
+characters load which — *"make the agents that need a skill load it"* — so e.g. the `glab`
+GitLab-CLI skill is shared by the Software Engineer and DevOps/SRE without duplication.
+They compose **after** a character's own role skills.
+
+| Character | Shared skills it loads | Source |
+|-----------|------------------------|--------|
+| 🧠 **Tech Lead** | `code-review-and-quality`, `documentation-and-adrs`, `mr-review` | addyosmani · GitLab |
+| 💻 **Software Engineer** | `git-workflow-and-versioning`, `commit-messages`, `glab` | addyosmani · GitLab |
+| 🧪 **QA / SDET** | `performance-optimization`, `self-service-performance-testing` | addyosmani · GitLab |
+| 🚀 **DevOps / SRE** | `jenkins-expert`, `ci-cd-and-automation`, `security-and-hardening`, `gitlab-pipeline-watch`, `glab` | 0xfurai · addyosmani · GitLab |
+
+Sources (all MIT-licensed; each `SKILL.md` carries the specific link):
+[`jenkins-expert`](https://github.com/0xfurai/claude-code-subagents/blob/main/agents/jenkins-expert.md)
+from **0xfurai/claude-code-subagents** ·
+[**addyosmani/agent-skills**](https://github.com/addyosmani/agent-skills/tree/main/skills) ·
+[**gitlab-org/ai/skills**](https://gitlab.com/gitlab-org/ai/skills/-/tree/main/skills).
+Add or re-map a shared skill by dropping a `SKILL.md` under `library/_shared/<name>/` and
+listing it in `SHARED_SKILLS` for the characters that need it — no other code change.
 
 Beyond the two standard fields, a `SKILL.md` may carry one **project-specific extension** —
 an optional **`tool:`** key naming an executable to bind (e.g. `tool: run_tests`). The
@@ -198,7 +231,8 @@ app/                     # runnable FastAPI service (pure logic + thin web adapt
 tests/                   # unit tests + E2E API tests (run automatically by QA)
 requirements.txt
 Dockerfile
-.github/workflows/       # ci.yml, cd.yml
+.gitlab-ci.yml           # GitLab CI/CD: lint + test, then trigger Jenkins (+ manual deploy)
+Jenkinsfile              # Jenkins Declarative pipeline: build + safe rollout with rollback
 terraform/main.tf        # IaC
 k8s/                     # deployment (+ readiness probe) and service
 monitoring/              # prometheus.yml, alerts.yml

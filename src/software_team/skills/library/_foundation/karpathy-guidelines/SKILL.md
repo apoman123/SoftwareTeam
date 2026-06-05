@@ -40,3 +40,9 @@ Turn the task into verifiable success criteria, then loop until they pass:
 For multi-step work, state a brief plan with a verification check per step. Strong,
 testable criteria let you work independently; weak ones ("make it work") force constant
 clarification.
+
+> **Source:** Adapted from the `karpathy-guidelines` skill in
+> [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines)
+> (MIT licence per its `SKILL.md`), itself derived from
+> [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876) on
+> common LLM coding pitfalls.
