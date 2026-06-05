@@ -13,8 +13,8 @@ Highlights:
 - **Six specialist characters.** A Product Manager, UI/UX Designer, Tech Lead, Software
   Engineer, QA/SDET, and DevOps/SRE — each a graph node with its own curated skill set.
 - **Pluggable LLM backend.** Pick a local Ollama server, the OpenAI API (or any
-  OpenAI-compatible endpoint), Google Gemini (google-genai), or a local GGUF model via
-  llama.cpp, with a single environment variable.
+  OpenAI-compatible endpoint), the Anthropic API (Claude), Google Gemini (google-genai),
+  or a local GGUF model via llama.cpp, with a single environment variable.
 - **Grounded in current facts.** Every character can search the web for what it needs —
   current library APIs, today's stable versions, fresh best practices — and fold the
   findings into its work.
@@ -39,6 +39,16 @@ catalogue.
 Skills come in two kinds: **tool-backed** skills that perform real I/O (writing files,
 running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
 **reasoning** skills that the LLM performs in context.
+
+**Foundation skills for the code authors.** The three characters that write code —
+💻 Software Engineer, 🧪 QA/SDET, and 🚀 DevOps/SRE — additionally load two shared
+**foundation** skills *first*, before any role-specific skill: `karpathy-guidelines`
+(behaviour rules that cut common LLM coding mistakes — think before coding, keep it
+simple, make surgical changes, work to verifiable goals) and then `follow-google-style`
+(write every file to the [Google style guide](https://google.github.io/styleguide/) for
+its language). They live in `skills/library/_foundation/` because they are cross-cutting,
+and the loader prepends them for the `CODE_AUTHORS` set so the engineering baseline frames
+everything that follows.
 
 ### The skills library (`src/software_team/skills/`)
 
@@ -71,6 +81,7 @@ skills/
   registry.py    # groups skills by character -> ROLE_SKILLS
   common/        # executable tools (filesystem, shell, web search), tool registry, authoring
   library/       # the SKILL.md library — one folder per character, one folder per skill
+    _foundation/        # shared skills the code authors load first (karpathy-guidelines, follow-google-style)
     product_manager/    ux_designer/    tech_lead/
     software_engineer/  qa_engineer/    devops_sre/
 ```
@@ -149,8 +160,9 @@ uv run software-team run --spec examples/sample_spec.md
 uv run software-team run --prompt "Build a URL shortener with click analytics" --dry-run
 
 # Other backends (set SWTEAM_LLM_PROVIDER, install the matching extra):
-#   uv sync --extra openai     && SWTEAM_LLM_PROVIDER=openai     OPENAI_API_KEY=...  uv run software-team run -s examples/sample_spec.md
-#   uv sync --extra google     && SWTEAM_LLM_PROVIDER=google     GOOGLE_API_KEY=...  uv run software-team run -s examples/sample_spec.md
+#   uv sync --extra openai     && SWTEAM_LLM_PROVIDER=openai     OPENAI_API_KEY=...     uv run software-team run -s examples/sample_spec.md
+#   uv sync --extra anthropic  && SWTEAM_LLM_PROVIDER=anthropic  ANTHROPIC_API_KEY=...  uv run software-team run -s examples/sample_spec.md
+#   uv sync --extra google     && SWTEAM_LLM_PROVIDER=google     GOOGLE_API_KEY=...     uv run software-team run -s examples/sample_spec.md
 #   uv sync --extra llama-cpp  && SWTEAM_LLM_PROVIDER=llama_cpp  SWTEAM_CODER_MODEL=/models/coder.gguf uv run software-team run -s examples/sample_spec.md
 
 # Enable internet search so characters fetch the latest APIs/best practices:
@@ -201,16 +213,21 @@ Copy `.env.example` and adjust. Key variables:
 
 **LLM provider**
 
-- `SWTEAM_LLM_PROVIDER` — `ollama` (default), `openai`, `google`, or `llama_cpp`.
-  Install the matching extra (`uv sync --extra openai|google|llama-cpp`).
+- `SWTEAM_LLM_PROVIDER` — `ollama` (default), `openai`, `anthropic`, `google`, or
+  `llama_cpp`. Install the matching extra (`uv sync --extra openai|anthropic|google|llama-cpp`).
 - `SWTEAM_CODER_MODEL` — model for the Tech Lead and Software Engineer (needs strong code
   and tool calling). Defaults per provider (Ollama `qwen2.5-coder:7b`, OpenAI `gpt-4o`,
-  Google `gemini-1.5-pro`; for `llama_cpp` set it to a local `.gguf` path).
+  Anthropic `claude-opus-4-8`, Google `gemini-1.5-pro`; for `llama_cpp` set it to a local
+  `.gguf` path).
 - `SWTEAM_NARRATIVE_MODEL` — model for PM/UX/QA-planning/DevOps prose. Defaults per
-  provider (Ollama `llama3.1:8b`, OpenAI `gpt-4o-mini`, Google `gemini-1.5-flash`). Set
-  both models to the same value to run on a single model.
+  provider (Ollama `llama3.1:8b`, OpenAI `gpt-4o-mini`, Anthropic `claude-sonnet-4-6`,
+  Google `gemini-1.5-flash`). Set both models to the same value to run on a single model.
 - Credentials and endpoints: `OLLAMA_HOST`, `OPENAI_API_KEY` (plus optional
-  `OPENAI_BASE_URL` for OpenAI-compatible servers), `GOOGLE_API_KEY`.
+  `OPENAI_BASE_URL` for OpenAI-compatible servers), `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`.
+
+> **Note (Anthropic):** Claude Opus 4.7 and 4.8 no longer accept a `temperature`
+> parameter, so `SWTEAM_TEMPERATURE` is ignored for those models (the factory omits it to
+> avoid an API error). Older Claude models and the other providers still honour it.
 
 **Internet search** (every character pulls the latest info it needs)
 
@@ -246,7 +263,7 @@ src/software_team/
   config.py      # LLM provider, per-role model tiers, web search, paths, loop caps
   intake.py      # resolve the feature request from a --spec file or a --prompt
   state.py       # TeamState blackboard
-  llm.py         # multi-provider chat-model factory (ollama/openai/google/llama_cpp) + dry-run stub
+  llm.py         # multi-provider chat-model factory (ollama/openai/anthropic/google/llama_cpp) + dry-run stub
   dryrun.py      # canned artifacts for --dry-run
   ui.py          # console reporting
   skills/        # SKILL.md library (loader, registry, common tools incl. web search)

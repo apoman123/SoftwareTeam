@@ -76,6 +76,21 @@ def test_every_character_loads_its_skill_md_library():
         assert tools_for(role), f"{role} should have tool-backed skills"
 
 
+def test_code_authors_load_foundation_skills_first():
+    from software_team.skills.loader import CODE_AUTHORS, FOUNDATION_SKILLS, load_character_skills
+
+    # The two foundation skills lead the list, Karpathy before the Google style guide.
+    assert FOUNDATION_SKILLS == ("karpathy-guidelines", "follow-google-style")
+    for role in CODE_AUTHORS:
+        names = [s.name for s in load_character_skills(role)]
+        assert names[:2] == list(FOUNDATION_SKILLS), f"{role} should load foundation skills first"
+
+    # Non-code-authoring characters do not get the foundation skills.
+    for role in ("product_manager", "ux_designer", "tech_lead"):
+        names = {s.name for s in load_character_skills(role)}
+        assert names.isdisjoint(FOUNDATION_SKILLS), f"{role} should not load foundation skills"
+
+
 def test_skill_md_frontmatter_and_tool_binding():
     from software_team.skills.loader import load_character_skills
 

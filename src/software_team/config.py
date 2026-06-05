@@ -2,10 +2,10 @@
 
 Covers the LLM provider, per-role model selection, web search, paths, and loop caps.
 All values are overridable through environment variables (see .env.example). The team
-can run on a local Ollama server, the OpenAI API, Google Gemini (google-genai), or a
-local GGUF model via llama.cpp — selected with ``SWTEAM_LLM_PROVIDER``. Each character
-node can also pull fresh facts from the internet (e.g. the latest API of a library)
-through the configured web-search provider.
+can run on a local Ollama server, the OpenAI API, the Anthropic API (Claude), Google
+Gemini (google-genai), or a local GGUF model via llama.cpp — selected with
+``SWTEAM_LLM_PROVIDER``. Each character node can also pull fresh facts from the internet
+(e.g. the latest API of a library) through the configured web-search provider.
 """
 
 from __future__ import annotations
@@ -58,11 +58,14 @@ ROLE_TIERS: dict[str, str] = {
 # Supported LLM backends. The default per-tier model for each, used unless overridden by
 # SWTEAM_CODER_MODEL / SWTEAM_NARRATIVE_MODEL. For llama.cpp the "model" is the path to a
 # local .gguf file, so there is no useful default — set it explicitly.
-LLM_PROVIDERS = ("ollama", "openai", "google", "llama_cpp")
+LLM_PROVIDERS = ("ollama", "openai", "anthropic", "google", "llama_cpp")
 
 PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {
     "ollama": {"coder": "qwen2.5-coder:7b", "narrative": "llama3.1:8b"},
     "openai": {"coder": "gpt-4o", "narrative": "gpt-4o-mini"},
+    # Anthropic Claude: Opus 4.8 for code (most capable), Sonnet 4.6 for prose
+    # (best speed/intelligence balance). See https://docs.claude.com/en/docs/about-claude/models.
+    "anthropic": {"coder": "claude-opus-4-8", "narrative": "claude-sonnet-4-6"},
     "google": {"coder": "gemini-1.5-pro", "narrative": "gemini-1.5-flash"},
     "llama_cpp": {"coder": "", "narrative": ""},
 }
@@ -97,6 +100,9 @@ class Settings:
     # --- OpenAI (and OpenAI-compatible endpoints) ---
     openai_api_key: str = field(default_factory=lambda: _env("OPENAI_API_KEY", ""))
     openai_base_url: str = field(default_factory=lambda: _env("OPENAI_BASE_URL", ""))
+
+    # --- Anthropic Claude ---
+    anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
 
     # --- Google Gemini (google-genai) ---
     google_api_key: str = field(

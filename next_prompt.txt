@@ -1,0 +1,7 @@
+Read the project before you do your work. Use create-skill skill to revise current skills and make sure any
+character that need to write code(development, testing, deployment related character who needs to write code) follow
+the google style guidelines(add that to the skills). Also every character that needs to write code must load the
+karpathy-guidelines as a skill first. Here is the link of that skill:
+https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines Finally, make sure the
+whole project follow the google style guidelines, and things related to agents(ex: skills, tools, etc.) follow the
+anthropic conventions. Good luck!

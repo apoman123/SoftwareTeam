@@ -24,6 +24,9 @@ dev = [
 openai = [
     "langchain-openai>=0.2",
 ]
+anthropic = [
+    "langchain-anthropic>=0.3",
+]
 google = [
     "langchain-google-genai>=2.0",
 ]

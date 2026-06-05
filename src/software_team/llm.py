@@ -2,10 +2,11 @@
 
 Builds a chat model for a given role from whichever provider is configured
 (``SWTEAM_LLM_PROVIDER``): a local **Ollama** server, the **OpenAI** API (or any
-OpenAI-compatible endpoint), **Google Gemini** (google-genai), or a local GGUF model via
-**llama.cpp**. In `--dry-run` mode it returns a deterministic stub that produces canned,
-structurally-valid artifacts, so the whole graph (and all file generation) can be
-exercised with no model server, provider package, or network running.
+OpenAI-compatible endpoint), the **Anthropic** API (Claude), **Google Gemini**
+(google-genai), or a local GGUF model via **llama.cpp**. In `--dry-run` mode it returns a
+deterministic stub that produces canned, structurally-valid artifacts, so the whole graph
+(and all file generation) can be exercised with no model server, provider package, or
+network running.
 """
 
 from __future__ import annotations
@@ -74,6 +75,42 @@ def _build_openai(model: str) -> Any:
     return ChatOpenAI(**kwargs)
 
 
+# Anthropic's Opus 4.7+ models removed the sampling parameters: sending ``temperature``
+# (or top_p/top_k) returns HTTP 400. Only forward temperature to models that still accept
+# it. See https://docs.claude.com/en/docs/about-claude/models/migration-guide.
+_ANTHROPIC_NO_TEMPERATURE_PREFIXES = ("claude-opus-4-8", "claude-opus-4-7")
+
+
+def _anthropic_accepts_temperature(model: str) -> bool:
+    """Return whether ``model`` accepts a ``temperature`` parameter.
+
+    Args:
+        model: The Anthropic model id (e.g. "claude-opus-4-8").
+
+    Returns:
+        False for Opus 4.7/4.8 (which reject sampling params with a 400), else True.
+    """
+    return not model.startswith(_ANTHROPIC_NO_TEMPERATURE_PREFIXES)
+
+
+def _build_anthropic(model: str) -> Any:
+    try:
+        from langchain_anthropic import ChatAnthropic
+    except ImportError as e:
+        raise ImportError(
+            "The 'anthropic' provider needs langchain-anthropic. Install it with "
+            "`uv sync --extra anthropic`."
+        ) from e
+
+    kwargs: dict[str, Any] = {"model": model}
+    if SETTINGS.anthropic_api_key:
+        kwargs["api_key"] = SETTINGS.anthropic_api_key
+    # Opus 4.7+ reject temperature/top_p/top_k (HTTP 400); only set it where accepted.
+    if _anthropic_accepts_temperature(model):
+        kwargs["temperature"] = SETTINGS.temperature
+    return ChatAnthropic(**kwargs)
+
+
 def _build_google(model: str) -> Any:
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -109,6 +146,7 @@ def _build_llama_cpp(model: str) -> Any:
 _BUILDERS = {
     "ollama": _build_ollama,
     "openai": _build_openai,
+    "anthropic": _build_anthropic,
     "google": _build_google,
     "llama_cpp": _build_llama_cpp,
 }
