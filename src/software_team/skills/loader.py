@@ -55,7 +55,9 @@ FOUNDATION_SKILLS = ("karpathy-guidelines", "follow-google-style")
 # ci-cd-and-automation, security-and-hardening, git-workflow-and-versioning,
 # code-review-and-quality, documentation-and-adrs, performance-optimization
 # (addyosmani/agent-skills); gitlab-pipeline-watch, glab, commit-messages, mr-review,
-# self-service-performance-testing (gitlab-org/ai/skills).
+# self-service-performance-testing (gitlab-org/ai/skills); the DevSecOps set
+# (vulnerability-scanning, sast-scanning, dependency-scanning, sbom-supply-chain,
+# container-hardening, kubernetes-hardening) (BagelHole/DevOps-Security-Agent-Skills).
 SHARED = LIBRARY / "_shared"
 SHARED_SKILLS: dict[str, tuple[str, ...]] = {
     "tech_lead": ("code-review-and-quality", "documentation-and-adrs", "mr-review"),
@@ -67,6 +69,13 @@ SHARED_SKILLS: dict[str, tuple[str, ...]] = {
         "security-and-hardening",
         "gitlab-pipeline-watch",
         "glab",
+        # DevSecOps: shift-left scanning + container/K8s hardening woven into the pipeline.
+        "vulnerability-scanning",
+        "sast-scanning",
+        "dependency-scanning",
+        "sbom-supply-chain",
+        "container-hardening",
+        "kubernetes-hardening",
     ),
 }
 

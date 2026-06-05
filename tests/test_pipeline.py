@@ -19,6 +19,7 @@ def test_full_pipeline_dry_run(tmp_path):
     # Every phase produced its hallmark artifacts on disk.
     expected = [
         "docs/product_backlog.md",
+        "docs/design_system.md",
         "docs/ux_design.md",
         "docs/architecture.md",
         "docs/test_plan.md",
@@ -34,6 +35,7 @@ def test_full_pipeline_dry_run(tmp_path):
         "monitoring/prometheus.yml",
         "docs/runbook.md",
         "docs/operations_report.md",
+        "docs/security_review.md",
         # Document & Handoff phase — one deliverable per responsible role.
         "README.md",
         "docs/test_report.md",
@@ -43,6 +45,11 @@ def test_full_pipeline_dry_run(tmp_path):
     ]
     for rel in expected:
         assert (tmp_path / rel).exists(), f"missing artifact: {rel}"
+
+    # The DevSecOps audit ran over the (hardened) artifacts and every check passes.
+    security_review = (tmp_path / "docs" / "security_review.md").read_text()
+    assert "Security Review (DevSecOps)" in security_review
+    assert "_(fix needed)_" not in security_review
 
     # GitLab CI is wired to Jenkins: the pipeline triggers a Jenkins build, and the
     # Jenkinsfile is a declarative pipeline that deploys with an automatic rollback.

@@ -141,4 +141,6 @@ def test_code_authors_still_load_foundation_before_shared_skills():
     # Foundation skills stay first even though shared skills are appended last.
     names = [s.name for s in load_character_skills("devops_sre")]
     assert names[:2] == list(FOUNDATION_SKILLS)
-    assert names[-1] == "glab"  # shared skills compose after the role skills
+    # Shared skills compose after the role skills; the DevSecOps set lands at the tail.
+    assert "glab" in names
+    assert names[-1] == "kubernetes-hardening"

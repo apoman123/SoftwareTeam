@@ -1,7 +1,8 @@
 """Tool registry — resolves the `tool:` named in a SKILL.md frontmatter.
 
-The executable side of skills lives here as LangChain `@tool`s (filesystem + shell).
-A skill becomes "tool-backed" by naming one of these in its frontmatter, e.g.
+The executable side of skills lives here as LangChain `@tool`s (filesystem, shell, web
+search, and the UI/UX design-system engine). A skill becomes "tool-backed" by naming one
+of these in its frontmatter, e.g.
 
     ---
     name: run-tests
@@ -12,7 +13,7 @@ A skill becomes "tool-backed" by naming one of these in its frontmatter, e.g.
 
 from __future__ import annotations
 
-from . import filesystem, search, shell
+from . import design_system, filesystem, search, security, shell
 
 TOOL_REGISTRY: dict[str, object] = {
     "write_source_file": filesystem.write_source_file,
@@ -21,6 +22,9 @@ TOOL_REGISTRY: dict[str, object] = {
     "run_tests": shell.run_tests,
     "run_shell": shell.run_shell,
     "web_search": search.web_search_tool,
+    "design_system": design_system.design_system,
+    "ui_ux_search": design_system.ui_ux_search,
+    "security_audit": security.security_audit,
 }
 
 

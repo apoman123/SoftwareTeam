@@ -39,6 +39,7 @@ class TeamState(TypedDict, total=False):
     backlog: str
 
     # --- UI/UX Designer ---
+    design_system: str  # recommended pattern/style/colours/typography (design-system engine)
     ux_design: str
 
     # --- Tech Lead / Architect ---
@@ -68,6 +69,7 @@ class TeamState(TypedDict, total=False):
     k8s: str
     monitoring: str
     runbook: str
+    security_review: str  # DevSecOps hardening/scan audit of the deployment artifacts
 
     # --- QA execution ---
     test_results: str

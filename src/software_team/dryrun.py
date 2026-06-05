@@ -238,13 +238,18 @@ QA_FILES = {"tests/test_e2e.py": _E2E_TESTS}
 # --------------------------------------------------------------------------- #
 
 CI_FILES = {
+    # Hardened per DevSecOps practice: pinned slim base, non-root user, HEALTHCHECK,
+    # no secrets baked into layers.
     "Dockerfile": """\
 FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+RUN adduser --system --no-create-home appuser
+USER appuser
 EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 """,
     # GitLab CI/CD gates the merge request (lint + test), then hands off to Jenkins via the
@@ -253,6 +258,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 stages:
   - lint
   - test
+  - security
   - integrate
 
 default:
@@ -270,6 +276,30 @@ test:
   stage: test
   script:
     - pytest -q
+
+# DevSecOps: shift security left — SAST, dependency scan, and image/config CVE scan gate
+# the merge request before it can trigger the heavier Jenkins build.
+sast:
+  stage: security
+  script:
+    - pip install bandit
+    - bandit -r app -ll
+
+dependency-scan:
+  stage: security
+  script:
+    - pip install pip-audit
+    - pip-audit -r requirements.txt
+
+container-scan:
+  stage: security
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  before_script: []
+  script:
+    - trivy config --exit-code 1 --severity HIGH,CRITICAL .
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed task-api:$CI_COMMIT_SHA
 
 trigger-jenkins:
   stage: integrate
@@ -334,6 +364,7 @@ CD_FILES = {
 stages:
   - lint
   - test
+  - security
   - integrate
   - deploy
 
@@ -352,6 +383,41 @@ test:
   stage: test
   script:
     - pytest -q
+
+# DevSecOps: SAST + dependency scan + image/config CVE scan + SBOM gate the pipeline.
+sast:
+  stage: security
+  script:
+    - pip install bandit
+    - bandit -r app -ll
+
+dependency-scan:
+  stage: security
+  script:
+    - pip install pip-audit
+    - pip-audit -r requirements.txt
+
+container-scan:
+  stage: security
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  before_script: []
+  script:
+    - trivy config --exit-code 1 --severity HIGH,CRITICAL .
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed task-api:$CI_COMMIT_SHA
+
+sbom:
+  stage: security
+  image:
+    name: anchore/syft:latest
+    entrypoint: [""]
+  before_script: []
+  script:
+    - syft task-api:$CI_COMMIT_SHA -o cyclonedx-json > sbom.json
+  artifacts:
+    paths:
+      - sbom.json
 
 trigger-jenkins:
   stage: integrate
@@ -451,11 +517,29 @@ spec:
       labels:
         app: task-api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: task-api
-          image: task-api:latest
+          image: task-api:1.0.0
           ports:
             - containerPort: 8000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
           readinessProbe:
             httpGet:
               path: /health

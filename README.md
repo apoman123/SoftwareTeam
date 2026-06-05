@@ -30,17 +30,43 @@ catalogue.
 | Character | Phase focus | Skills |
 |-----------|-------------|--------|
 | 🧭 **Product Manager** | Plan + Document | `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics`, `write-user-manual` |
-| 🎨 **UI/UX Designer** | Plan | `map-user-flow`, `create-wireframe`, `specify-components`, `apply-usability-heuristics`, `ensure-accessibility` |
+| 🎨 **UI/UX Designer** | Plan | `generate-design-system`, `map-user-flow`, `create-wireframe`, `specify-components`, `apply-usability-heuristics`, `apply-ui-quality-checklist`, `ensure-accessibility` |
 | 🧠 **Tech Lead / Architect** | Plan + supervise | `select-tech-stack`, `design-architecture`, `define-api-spec`, `design-db-schema`, `write-adr`, `review-code`, `route-workflow` |
 | 💻 **Software Engineer** | Code + Operate + Document | `scaffold-project`, `write-code`, `write-unit-tests`, `run-tests`, `fix-bug`, `manage-version-control`, `write-readme` |
 | 🧪 **QA / SDET** | Plan + Deploy + Document | `design-test-cases`, `analyze-edge-cases`, `write-e2e-tests`, `plan-performance-tests`, `execute-tests`, `inspect-project`, `write-test-report` |
-| 🚀 **DevOps / SRE** | Code + Deploy + Operate + Document | `containerize-service`, `build-ci-pipeline`, `build-cd-pipeline`, `write-infrastructure-code`, `write-k8s-manifests`, `configure-observability`, `write-runbook`, `document-infrastructure` |
+| 🚀 **DevOps / SRE** | Code + Deploy + Operate + Document | `containerize-service`, `build-ci-pipeline`, `build-cd-pipeline`, `write-infrastructure-code`, `write-k8s-manifests`, `configure-observability`, `write-runbook`, `audit-container-security`, `document-infrastructure` |
 
 The CI/CD that DevOps/SRE generates is **GitLab CI integrated with Jenkins**: a
 `.gitlab-ci.yml` lints and tests every merge request and then triggers a `Jenkinsfile`
 (Declarative pipeline) for the heavier build and a safe, rollback-capable deploy. Several
 characters also load **external, attributed skills** (Jenkins, GitLab, code-review,
 performance) — see [External skills](#external-skills-shared-with-attribution) below.
+
+**DevSecOps for the DevOps/SRE.** The pipeline shifts security left: the generated
+`.gitlab-ci.yml` adds a `security` stage (SAST, dependency/SCA scan, and a Trivy image+config
+CVE scan that fails on HIGH/CRITICAL, plus an SBOM), the Dockerfile and Kubernetes manifests
+are hardened (non-root, pinned image, dropped capabilities, read-only root filesystem,
+resource limits), and the 🚀 DevOps/SRE then runs an offline **security audit**
+(`skills/common/security.py`) over those artifacts, writing a pass/total review to
+`docs/security_review.md`. The DevSecOps knowledge (six shared skills + the
+`audit-container-security` tool-backed skill) is adapted from
+[**BagelHole/DevOps-Security-Agent-Skills**](https://github.com/BagelHole/DevOps-Security-Agent-Skills)
+(MIT, © 2026 Toby Miller). The audit is deterministic and offline, so it also runs in `--dry-run`.
+
+**Design intelligence for the UI/UX Designer.** Before sketching anything, the 🎨 UI/UX
+Designer runs an offline **design-system engine** (`skills/common/design_system.py`):
+given the product brief it BM25-searches a vendored knowledge base of product types,
+visual styles, colour palettes and font pairings and applies per-industry reasoning rules
+to recommend a complete design system — page pattern, style, **semantic colour tokens**,
+typography, key effects, and the **anti-patterns to avoid** — written to
+`docs/design_system.md` and folded into the designer's prompt so flows and wireframes are
+grounded in a deliberate system. The reasoning model and knowledge base
+(`skills/common/uiux_data/`) are adapted from
+[**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+(MIT, © 2024 Next Level Builder); it backs the `generate-design-system` skill (and the
+`design_system` / `ui_ux_search` tools). The companion `apply-ui-quality-checklist` skill
+distils that project's UX rule set into a priority-ordered review pass. Both run offline,
+so they also work in `--dry-run`.
 
 Skills come in two kinds: **tool-backed** skills that perform real I/O (writing files,
 running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
@@ -87,7 +113,10 @@ skills/
   base.py        # the Skill dataclass + guidance composer
   loader.py      # discovers and parses each SKILL.md (frontmatter + body)
   registry.py    # groups skills by character -> ROLE_SKILLS
-  common/        # executable tools (filesystem, shell, web search), tool registry, authoring
+  common/        # executable tools (filesystem, shell, web search, design-system engine), tool registry, authoring
+    design_system.py  # offline UI/UX design-system reasoning engine (design_system / ui_ux_search tools)
+    uiux_data/        # vendored UI/UX knowledge base (CSV) + LICENSE/ATTRIBUTION (ui-ux-pro-max-skill, MIT)
+    security.py       # offline DevSecOps audit of Dockerfile/k8s/CI artifacts (security_audit tool)
   library/       # the SKILL.md library — one folder per character, one folder per skill
     _foundation/        # shared skills the code authors load first (karpathy-guidelines, follow-google-style)
     _shared/            # externally-sourced skills several characters reuse (see "External skills" below)
@@ -109,13 +138,28 @@ They compose **after** a character's own role skills.
 | 🧠 **Tech Lead** | `code-review-and-quality`, `documentation-and-adrs`, `mr-review` | addyosmani · GitLab |
 | 💻 **Software Engineer** | `git-workflow-and-versioning`, `commit-messages`, `glab` | addyosmani · GitLab |
 | 🧪 **QA / SDET** | `performance-optimization`, `self-service-performance-testing` | addyosmani · GitLab |
-| 🚀 **DevOps / SRE** | `jenkins-expert`, `ci-cd-and-automation`, `security-and-hardening`, `gitlab-pipeline-watch`, `glab` | 0xfurai · addyosmani · GitLab |
+| 🚀 **DevOps / SRE** | `jenkins-expert`, `ci-cd-and-automation`, `security-and-hardening`, `gitlab-pipeline-watch`, `glab`, `vulnerability-scanning`, `sast-scanning`, `dependency-scanning`, `sbom-supply-chain`, `container-hardening`, `kubernetes-hardening` | 0xfurai · addyosmani · GitLab · BagelHole |
+
+The DevOps/SRE's six DevSecOps skills (`vulnerability-scanning`, `sast-scanning`,
+`dependency-scanning`, `sbom-supply-chain`, `container-hardening`, `kubernetes-hardening`)
+are distilled from [**BagelHole/DevOps-Security-Agent-Skills**](https://github.com/BagelHole/DevOps-Security-Agent-Skills)
+(MIT, © 2026 Toby Miller); its tool-backed `audit-container-security` skill (a DevOps role
+skill) runs the offline `security_audit` tool built from the same checklist.
+
+The 🎨 **UI/UX Designer** additionally draws on an embedded design-system engine rather
+than a `_shared/` skill: its `generate-design-system` and `apply-ui-quality-checklist`
+skills are backed by `skills/common/design_system.py` and the vendored knowledge base in
+`skills/common/uiux_data/`, both adapted from
+[**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+(MIT, © 2024 Next Level Builder; see `uiux_data/LICENSE` and `uiux_data/ATTRIBUTION.md`).
 
 Sources (all MIT-licensed; each `SKILL.md` carries the specific link):
 [`jenkins-expert`](https://github.com/0xfurai/claude-code-subagents/blob/main/agents/jenkins-expert.md)
 from **0xfurai/claude-code-subagents** ·
 [**addyosmani/agent-skills**](https://github.com/addyosmani/agent-skills/tree/main/skills) ·
-[**gitlab-org/ai/skills**](https://gitlab.com/gitlab-org/ai/skills/-/tree/main/skills).
+[**gitlab-org/ai/skills**](https://gitlab.com/gitlab-org/ai/skills/-/tree/main/skills) ·
+[**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) ·
+[**BagelHole/DevOps-Security-Agent-Skills**](https://github.com/BagelHole/DevOps-Security-Agent-Skills).
 Add or re-map a shared skill by dropping a `SKILL.md` under `library/_shared/<name>/` and
 listing it in `SHARED_SKILLS` for the characters that need it — no other code change.
 
@@ -230,15 +274,15 @@ README.md                # how to set up, run, and call the service (Software En
 app/                     # runnable FastAPI service (pure logic + thin web adapter)
 tests/                   # unit tests + E2E API tests (run automatically by QA)
 requirements.txt
-Dockerfile
-.gitlab-ci.yml           # GitLab CI/CD: lint + test, then trigger Jenkins (+ manual deploy)
+Dockerfile               # hardened: non-root, pinned base, HEALTHCHECK
+.gitlab-ci.yml           # GitLab CI/CD: lint + test + security scans, then trigger Jenkins (+ manual deploy)
 Jenkinsfile              # Jenkins Declarative pipeline: build + safe rollout with rollback
 terraform/main.tf        # IaC
-k8s/                     # deployment (+ readiness probe) and service
+k8s/                     # deployment (hardened securityContext + limits) and service
 monitoring/              # prometheus.yml, alerts.yml
-docs/                    # backlog, ux, architecture, openapi, schema, test plan,
-                         # runbook, operations report, and the handoff docs:
-                         # test_report, infrastructure, user_manual, release_notes
+docs/                    # backlog, design_system, ux, architecture, openapi, schema,
+                         # test plan, runbook, operations report, security_review, and the
+                         # handoff docs: test_report, infrastructure, user_manual, release_notes
 ```
 
 ## Configuration
@@ -300,7 +344,7 @@ src/software_team/
   llm.py         # multi-provider chat-model factory (ollama/openai/anthropic/google/llama_cpp) + dry-run stub
   dryrun.py      # canned artifacts for --dry-run
   ui.py          # console reporting
-  skills/        # SKILL.md library (loader, registry, common tools incl. web search)
+  skills/        # SKILL.md library (loader, registry, common tools incl. web search, design-system + security-audit engines)
   agents/        # the six characters (one file each) + shared node helpers
   graph.py       # LangGraph StateGraph wiring the phases + loops
   main.py        # Typer CLI
