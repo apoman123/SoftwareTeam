@@ -1,8 +1,11 @@
 """LLM factory.
 
-Builds a ChatOllama instance for a given role. In `--dry-run` mode it returns a
-deterministic stub that produces canned, structurally-valid artifacts, so the whole
-graph (and all file generation) can be exercised with no model server running.
+Builds a chat model for a given role from whichever provider is configured
+(``SWTEAM_LLM_PROVIDER``): a local **Ollama** server, the **OpenAI** API (or any
+OpenAI-compatible endpoint), **Google Gemini** (google-genai), or a local GGUF model via
+**llama.cpp**. In `--dry-run` mode it returns a deterministic stub that produces canned,
+structurally-valid artifacts, so the whole graph (and all file generation) can be
+exercised with no model server, provider package, or network running.
 """
 
 from __future__ import annotations
@@ -10,7 +13,8 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.prompt_values import PromptValue
 
 from .config import SETTINGS
 from .dryrun import canned_response
@@ -19,20 +23,95 @@ from .dryrun import canned_response
 def build_llm(role: str, dry_run: bool = False) -> Any:
     """Return a chat model for `role`.
 
-    dry_run -> StubChatModel (no network). Otherwise a ChatOllama bound to the role's
-    configured model.
+    dry_run -> StubChatModel (no network). Otherwise the chat model for the configured
+    provider, bound to the role's tier model. Provider packages are imported lazily so a
+    dry run (and the other providers) work without every backend installed.
     """
     if dry_run:
         return StubChatModel(role=role)
 
-    # Imported lazily so --dry-run works even if langchain-ollama isn't installed.
-    from langchain_ollama import ChatOllama
+    provider = SETTINGS.llm_provider
+    model = SETTINGS.model_for(role)
+    builder = _BUILDERS.get(provider)
+    if builder is None:  # pragma: no cover - guarded by config normalisation
+        raise ValueError(
+            f"Unknown SWTEAM_LLM_PROVIDER '{provider}'. Choose one of: {', '.join(_BUILDERS)}."
+        )
+    return builder(model)
+
+
+def _build_ollama(model: str) -> Any:
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError as e:  # pragma: no cover - import guard
+        raise ImportError(
+            "The 'ollama' provider needs langchain-ollama. Install it with "
+            "`uv sync` (it is a base dependency)."
+        ) from e
 
     return ChatOllama(
-        model=SETTINGS.model_for(role),
+        model=model,
         base_url=SETTINGS.ollama_host,
         temperature=SETTINGS.temperature,
     )
+
+
+def _build_openai(model: str) -> Any:
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError as e:
+        raise ImportError(
+            "The 'openai' provider needs langchain-openai. Install it with "
+            "`uv sync --extra openai`."
+        ) from e
+
+    kwargs: dict[str, Any] = {"model": model, "temperature": SETTINGS.temperature}
+    if SETTINGS.openai_api_key:
+        kwargs["api_key"] = SETTINGS.openai_api_key
+    if SETTINGS.openai_base_url:
+        # Lets the same provider drive any OpenAI-compatible server (vLLM, LM Studio…).
+        kwargs["base_url"] = SETTINGS.openai_base_url
+    return ChatOpenAI(**kwargs)
+
+
+def _build_google(model: str) -> Any:
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+    except ImportError as e:
+        raise ImportError(
+            "The 'google' provider needs langchain-google-genai. Install it with "
+            "`uv sync --extra google`."
+        ) from e
+
+    kwargs: dict[str, Any] = {"model": model, "temperature": SETTINGS.temperature}
+    if SETTINGS.google_api_key:
+        kwargs["google_api_key"] = SETTINGS.google_api_key
+    return ChatGoogleGenerativeAI(**kwargs)
+
+
+def _build_llama_cpp(model: str) -> Any:
+    if not model:
+        raise ValueError(
+            "The 'llama_cpp' provider needs a path to a local .gguf model. Set "
+            "SWTEAM_CODER_MODEL (and SWTEAM_NARRATIVE_MODEL) to the file path(s)."
+        )
+    try:
+        from langchain_community.chat_models import ChatLlamaCpp
+    except ImportError as e:
+        raise ImportError(
+            "The 'llama_cpp' provider needs langchain-community and llama-cpp-python. "
+            "Install them with `uv sync --extra llama-cpp`."
+        ) from e
+
+    return ChatLlamaCpp(model_path=model, temperature=SETTINGS.temperature)
+
+
+_BUILDERS = {
+    "ollama": _build_ollama,
+    "openai": _build_openai,
+    "google": _build_google,
+    "llama_cpp": _build_llama_cpp,
+}
 
 
 class StubChatModel(FakeListChatModel):
@@ -46,9 +125,8 @@ class StubChatModel(FakeListChatModel):
     role: str = "generic"
 
     def __init__(self, role: str = "generic", **kwargs: Any) -> None:
-        super().__init__(responses=["stub"], **kwargs)
-        # FakeListChatModel stores fields via pydantic; set after init.
-        object.__setattr__(self, "role", role)
+        """Initialise the stub for ``role`` (selects which canned artifact to return)."""
+        super().__init__(responses=["stub"], role=role, **kwargs)
 
     @property
     def _llm_type(self) -> str:
@@ -56,24 +134,21 @@ class StubChatModel(FakeListChatModel):
 
     def _call(self, messages: list[BaseMessage], stop=None, run_manager=None, **kwargs: Any) -> str:
         prompt = ""
-        for m in reversed(messages):
-            if getattr(m, "type", None) in ("human", "system"):
-                prompt = str(m.content)
+        for message in reversed(messages):
+            if getattr(message, "type", None) in ("human", "system"):
+                prompt = str(message.content)
                 break
         return canned_response(self.role, prompt)
 
     async def _acall(self, messages, stop=None, run_manager=None, **kwargs: Any) -> str:
         return self._call(messages, stop=stop, run_manager=run_manager, **kwargs)
 
-    def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> AIMessage:  # type: ignore[override]
-        msgs = input if isinstance(input, list) else [input]
-        # Normalise (string prompt -> human message handled by base), so reuse _call.
-        from langchain_core.prompt_values import PromptValue
-
-        if isinstance(input, PromptValue):
-            msgs = input.to_messages()
-        elif isinstance(input, str):
-            from langchain_core.messages import HumanMessage
-
-            msgs = [HumanMessage(content=input)]
-        return AIMessage(content=self._call(msgs))
+    def invoke(self, value: Any, config: Any = None, **kwargs: Any) -> AIMessage:  # type: ignore[override]
+        """Return a canned ``AIMessage`` for ``value`` (messages, prompt value, or string)."""
+        if isinstance(value, PromptValue):
+            messages = value.to_messages()
+        elif isinstance(value, str):
+            messages = [HumanMessage(content=value)]
+        else:
+            messages = value if isinstance(value, list) else [value]
+        return AIMessage(content=self._call(messages))

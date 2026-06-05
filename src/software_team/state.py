@@ -8,7 +8,7 @@ are plain strings (markdown / yaml / code) so they can be persisted to disk verb
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
 
@@ -21,6 +21,12 @@ def _merge_dict(left: dict[str, str], right: dict[str, str]) -> dict[str, str]:
 
 
 class TeamState(TypedDict, total=False):
+    """The shared blackboard passed between every agent in the graph.
+
+    Each phase reads what earlier roles produced and writes its own artifacts. All keys
+    are optional (``total=False``) because each node contributes only its own slice.
+    """
+
     # --- Input ---
     spec_path: str
     spec_text: str
@@ -78,7 +84,7 @@ class TeamState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], operator.add]
 
 
-def new_state(spec_path: str, spec_text: str, output_dir: str) -> dict[str, Any]:
+def new_state(spec_path: str, spec_text: str, output_dir: str) -> TeamState:
     """Build the initial state for a run."""
     return {
         "spec_path": spec_path,

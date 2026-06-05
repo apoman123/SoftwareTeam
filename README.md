@@ -1,4 +1,4 @@
-# Software Team — a multi-agent SDLC crew (LangChain + LangGraph + Ollama)
+# Software Team — a multi-agent SDLC crew (LangChain + LangGraph)
 
 A **cross-functional, "you build it, you run it" software team** implemented as a
 multi-agent system. You hand it a **spec file** describing your use-cases; six AI
@@ -6,8 +6,13 @@ characters carry the feature through the **whole software lifecycle** — Plan &
 Code & Build → Deploy & Release → Operate & Monitor — and write a **runnable project
 plus all CI/CD and DevOps artifacts** to a workspace directory.
 
-It runs entirely on **local models via Ollama**, and ships with a **`--dry-run`** mode
-that produces a complete, test-passing example with no model server at all.
+You pick the LLM backend — a local **Ollama** server, the **OpenAI** API (or any
+OpenAI-compatible endpoint), **Google Gemini** (google-genai), or a local GGUF model via
+**llama.cpp** — with a single env var. Every character can also **search the internet**
+for the latest information it needs (current library APIs, today's stable versions, fresh
+best practices) and fold it into its work. It ships with a **`--dry-run`** mode that
+produces a complete, test-passing example with no model server, provider package, or
+network at all.
 
 ## The characters and their skills
 
@@ -45,7 +50,7 @@ skills/
   base.py                     # the Skill dataclass + guidance composer
   loader.py                   # discovers & parses SKILL.md frontmatter + body
   registry.py                 # groups skills by character -> ROLE_SKILLS
-  common/                     # executable tools (filesystem, shell) + tool registry + authoring
+  common/                     # executable tools (filesystem, shell, web search) + tool registry + authoring
   library/                    # the SKILL.md skill library, one folder per character
     product_manager/          #   parse-spec, write-user-stories, define-acceptance-criteria,
                               #     prioritize-backlog, track-metrics
@@ -109,9 +114,17 @@ uv sync --extra dev
 # 2a. Offline demo — no model needed, generates a complete, test-passing project
 uv run software-team run --spec examples/sample_spec.md --dry-run
 
-# 2b. Live run — needs Ollama + models
+# 2b. Live run — default backend is Ollama
 ./scripts/setup.sh                 # installs models: qwen2.5-coder:7b, llama3.1:8b
 uv run software-team run --spec examples/sample_spec.md
+
+# Other backends (set SWTEAM_LLM_PROVIDER, install the matching extra):
+#   uv sync --extra openai     && SWTEAM_LLM_PROVIDER=openai     OPENAI_API_KEY=...  uv run software-team run -s examples/sample_spec.md
+#   uv sync --extra google     && SWTEAM_LLM_PROVIDER=google     GOOGLE_API_KEY=...  uv run software-team run -s examples/sample_spec.md
+#   uv sync --extra llama-cpp  && SWTEAM_LLM_PROVIDER=llama_cpp  SWTEAM_CODER_MODEL=/models/coder.gguf uv run software-team run -s examples/sample_spec.md
+
+# Enable internet search so characters fetch the latest APIs/best practices:
+uv sync --extra search             # keyless DuckDuckGo (SWTEAM_SEARCH_PROVIDER=duckduckgo)
 
 # Inspect what the team built
 ls -R workspace/
@@ -145,11 +158,29 @@ docs/                    # backlog, ux, architecture, openapi, schema, test plan
 
 Copy `.env.example` and adjust. Key variables:
 
-- `OLLAMA_HOST` — Ollama endpoint (default `http://localhost:11434`).
+**LLM provider**
+
+- `SWTEAM_LLM_PROVIDER` — `ollama` (default), `openai`, `google`, or `llama_cpp`.
+  Install the matching extra (`uv sync --extra openai|google|llama-cpp`).
 - `SWTEAM_CODER_MODEL` — model for Tech Lead + Software Engineer (needs strong code +
-  tool calling). Default `qwen2.5-coder:7b`.
-- `SWTEAM_NARRATIVE_MODEL` — model for PM/UX/QA-planning/DevOps prose. Default
-  `llama3.1:8b`. Set both to the same model to run on a single model.
+  tool calling). Defaults per provider (Ollama `qwen2.5-coder:7b`, OpenAI `gpt-4o`,
+  Google `gemini-1.5-pro`; for `llama_cpp` set it to a local `.gguf` path).
+- `SWTEAM_NARRATIVE_MODEL` — model for PM/UX/QA-planning/DevOps prose. Defaults per
+  provider (Ollama `llama3.1:8b`, OpenAI `gpt-4o-mini`, Google `gemini-1.5-flash`). Set
+  both to the same value to run on a single model.
+- Credentials/endpoints: `OLLAMA_HOST`, `OPENAI_API_KEY` (+ optional `OPENAI_BASE_URL`
+  for OpenAI-compatible servers), `GOOGLE_API_KEY`.
+
+**Internet search** (every character pulls the latest info it needs)
+
+- `SWTEAM_SEARCH_PROVIDER` — `duckduckgo` (default, keyless via `uv sync --extra search`),
+  `tavily` (needs `TAVILY_API_KEY`, `uv sync --extra tavily`), or `none` to disable.
+- `SWTEAM_SEARCH_MAX_RESULTS` — results per query (default 4). Search is skipped in
+  `--dry-run` and fails soft (no network/package → the run continues without it).
+
+**Other**
+
+- `SWTEAM_TEMPERATURE` — generation temperature (default 0.2).
 - `SWTEAM_MAX_REVIEW_ITERS`, `SWTEAM_MAX_FIX_ITERS` — feedback-loop caps (default 2).
 
 ## Design notes
@@ -161,17 +192,22 @@ Copy `.env.example` and adjust. Key variables:
 - **Verifiable by construction.** Codegen targets Python/FastAPI with business logic
   kept framework-free, so the generated unit tests pass with only pytest installed; the
   FastAPI E2E tests `importorskip` when FastAPI isn't present.
+- **Search grounds, it doesn't drive.** To fit the single-generation design, each
+  character runs its web queries *before* generating and the findings are folded into
+  that one prompt (rather than a multi-step tool loop). `web_search` is also registered as
+  a LangChain tool for tool-capable models. Search is best-effort: disabled in dry-run and
+  silent on any failure, so it never blocks a run.
 
 ## Project layout
 
 ```
 src/software_team/
-  config.py      # per-role model tiers, paths, loop caps
+  config.py      # LLM provider, per-role model tiers, web search, paths, loop caps
   state.py       # TeamState blackboard
-  llm.py         # ChatOllama factory + dry-run stub
+  llm.py         # multi-provider chat-model factory (ollama/openai/google/llama_cpp) + dry-run stub
   dryrun.py      # canned artifacts for --dry-run
   ui.py          # console reporting
-  skills/        # SKILL.md library (loader, registry, common tools) — one folder per character
+  skills/        # SKILL.md library (loader, registry, common tools incl. web search) — one folder per character
   agents/        # the six characters (one file each) + base helpers
   graph.py       # LangGraph StateGraph wiring the phases + loops
   main.py        # Typer CLI
@@ -189,3 +225,14 @@ uv run pytest
 Covers the supervisor routing/iteration caps, the file-writing skills, and a full
 dry-run pass of the graph that asserts every phase's artifacts land on disk and the
 generated project's own tests pass.
+
+## Code style
+
+The codebase follows the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
+(naming, import grouping, and `Args:`/`Returns:`/`Raises:` docstrings). It is enforced
+with Ruff — configured in `pyproject.toml` under `[tool.ruff]`:
+
+```bash
+uv run ruff check .      # lint (naming, imports, docstrings, bugs)
+uv run ruff format .     # auto-format
+```

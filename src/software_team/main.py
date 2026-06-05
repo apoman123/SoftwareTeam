@@ -19,7 +19,7 @@ from .config import SETTINGS
 from .graph import build_graph
 from .skills.common import filesystem
 from .skills.registry import skills_catalog
-from .state import new_state
+from .state import TeamState, new_state
 
 app = typer.Typer(add_completion=False, help="Multi-agent software team (LangGraph + Ollama).")
 console = Console()
@@ -27,7 +27,9 @@ console = Console()
 
 @app.command()
 def run(
-    spec: Path = typer.Option(..., "--spec", "-s", exists=True, readable=True, help="Spec/use-case file"),
+    spec: Path = typer.Option(
+        ..., "--spec", "-s", exists=True, readable=True, help="Spec/use-case file"
+    ),
     out: Path = typer.Option(Path("workspace"), "--out", "-o", help="Output workspace directory"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Use canned outputs (no Ollama needed)"),
 ) -> None:
@@ -35,9 +37,16 @@ def run(
     spec_text = spec.read_text(encoding="utf-8")
     out.mkdir(parents=True, exist_ok=True)
 
-    mode = "[yellow]dry-run[/yellow]" if dry_run else (
-        f"models: coder=[cyan]{SETTINGS.coder_model}[/cyan] narrative=[cyan]{SETTINGS.narrative_model}[/cyan]"
-    )
+    if dry_run:
+        mode = "[yellow]dry-run[/yellow]"
+    else:
+        search = SETTINGS.search_provider if SETTINGS.search_enabled else "off"
+        mode = (
+            f"provider=[cyan]{SETTINGS.llm_provider}[/cyan] "
+            f"coder=[cyan]{SETTINGS.coder_model}[/cyan] "
+            f"narrative=[cyan]{SETTINGS.narrative_model}[/cyan] "
+            f"search=[cyan]{search}[/cyan]"
+        )
     console.rule(f"[bold]Software Team[/bold] · spec=[green]{spec}[/green] · {mode}")
 
     state = new_state(str(spec), spec_text, str(out))
@@ -55,17 +64,22 @@ def skills() -> None:
     console.print(Markdown("# Team Skills\n\n" + skills_catalog()))
 
 
-def _summary(state: dict, out: Path) -> None:
+def _summary(state: TeamState, out: Path) -> None:
+    """Print a run summary: loop counts, test/deploy status, and the generated artifacts."""
     console.rule("[bold]Run complete[/bold]")
-    console.print(f"Review passes: [cyan]{state.get('review_iters', 0)}[/cyan]"
-                  f" · Bug-fix passes: [cyan]{state.get('fix_iters', 0)}[/cyan]")
+    console.print(
+        f"Review passes: [cyan]{state.get('review_iters', 0)}[/cyan]"
+        f" · Bug-fix passes: [cyan]{state.get('fix_iters', 0)}[/cyan]"
+    )
     status = "[green]passed[/green]" if state.get("tests_passed") else "[red]failed[/red]"
-    console.print(f"Tests: {status} · Deploy status: [bold]{state.get('deploy_status', 'n/a')}[/bold]")
+    console.print(
+        f"Tests: {status} · Deploy status: [bold]{state.get('deploy_status', 'n/a')}[/bold]"
+    )
 
     files = filesystem.list_tree(str(out))
     console.print(f"\n[bold]{len(files)} artifacts generated in[/bold] [green]{out}/[/green]:")
-    for f in files:
-        console.print(f"  • {f}")
+    for path in files:
+        console.print(f"  • {path}")
 
 
 if __name__ == "__main__":

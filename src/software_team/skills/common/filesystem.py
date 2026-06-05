@@ -32,8 +32,8 @@ def write_file(output_dir: str, rel_path: str, content: str) -> str:
 
 
 def write_files(output_dir: str, files: dict[str, str]) -> list[str]:
-    """Write a {path: content} map. Returns the list of paths written."""
-    return [write_file(output_dir, p, c) for p, c in files.items()]
+    """Write a ``{path: content}`` map and return the list of paths written."""
+    return [write_file(output_dir, path, content) for path, content in files.items()]
 
 
 def write_doc(output_dir: str, name: str, content: str) -> str:
@@ -42,6 +42,7 @@ def write_doc(output_dir: str, name: str, content: str) -> str:
 
 
 def read_file(output_dir: str, rel_path: str) -> str:
+    """Read a file under ``output_dir``, returning an empty string if it is absent."""
     target = _safe_join(Path(output_dir), rel_path)
     return target.read_text(encoding="utf-8") if target.exists() else ""
 
@@ -53,15 +54,16 @@ def list_tree(output_dir: str) -> list[str]:
         return []
     ignore = {"__pycache__", ".pytest_cache"}
     return sorted(
-        str(p.relative_to(base))
-        for p in base.rglob("*")
-        if p.is_file()
-        and p.suffix != ".pyc"
-        and not any(part in ignore for part in p.parts)
+        str(path.relative_to(base))
+        for path in base.rglob("*")
+        if path.is_file()
+        and path.suffix != ".pyc"
+        and not any(part in ignore for part in path.parts)
     )
 
 
 # --- LangChain tool wrappers (for ReAct-style agents on tool-capable models) ---
+
 
 @tool
 def write_source_file(output_dir: str, rel_path: str, content: str) -> str:

@@ -11,6 +11,7 @@ from .. import ui
 from ..skills.common import filesystem
 from ..skills.common.authoring import extract_section
 from ..skills.registry import skill_names
+from ..state import TeamState
 from .base import generate, output_dir, relpath, with_skills
 
 ROLE = "product_manager"
@@ -22,9 +23,11 @@ acceptance criteria, and a MoSCoW-prioritised backlog. You do not write code.
 Output GitHub-flavoured markdown only."""
 
 
-def product_manager_node(state: dict) -> dict:
+def product_manager_node(state: TeamState) -> TeamState:
+    """Turn the spec into user stories, Gherkin acceptance criteria, and a MoSCoW backlog."""
     ui.announce(
-        ROLE, "plan",
+        ROLE,
+        "plan",
         "Turning the spec into user stories, acceptance criteria and a prioritised backlog",
         skill_names(ROLE),
     )
@@ -37,7 +40,15 @@ def product_manager_node(state: dict) -> dict:
         "## Acceptance Criteria (Gherkin) with a ```gherkin block\n"
         "## Prioritised Backlog (MoSCoW)\n"
     )
-    doc = generate(ROLE, with_skills(SYSTEM, ROLE), user, state)
+    doc = generate(
+        ROLE,
+        with_skills(SYSTEM, ROLE),
+        user,
+        state,
+        research_queries=[
+            "latest best practices for writing user stories and acceptance criteria 2026",
+        ],
+    )
     path = filesystem.write_doc(output_dir(state), "product_backlog.md", doc)
     ui.written(relpath(state, [path]))
     return {

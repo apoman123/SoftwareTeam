@@ -15,6 +15,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Skill:
+    """A loaded skill: parsed SKILL.md metadata/body plus any bound LangChain tool."""
+
     name: str
     description: str
     body: str = ""
@@ -23,6 +25,7 @@ class Skill:
 
     @property
     def kind(self) -> str:
+        """Return "tool" for tool-backed skills, else "reasoning"."""
         return "tool" if self.tool is not None else "reasoning"
 
 
@@ -33,8 +36,8 @@ def compose_guidance(skills: list[Skill]) -> str:
     character's skills (they are short by design), prefixed by the skill name.
     """
     parts: list[str] = []
-    for s in skills:
-        body = s.body.strip()
+    for skill in skills:
+        body = skill.body.strip()
         if body:
-            parts.append(f"### {s.name}\n{body}")
+            parts.append(f"### {skill.name}\n{body}")
     return "\n\n".join(parts)

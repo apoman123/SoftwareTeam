@@ -22,23 +22,24 @@ def file_block(path: str, content: str) -> str:
 
 
 def file_blocks(files: dict[str, str]) -> str:
-    return "\n\n".join(file_block(p, c) for p, c in files.items())
+    """Render a ``{path: content}`` map as a sequence of file blocks."""
+    return "\n\n".join(file_block(path, content) for path, content in files.items())
 
 
 def parse_file_blocks(text: str) -> dict[str, str]:
     """Extract {path: content} from a response using the file-block protocol."""
     out: dict[str, str] = {}
-    for m in _BLOCK_RE.finditer(text or ""):
-        path = m.group("path").strip()
-        out[path] = m.group("body")
+    for match in _BLOCK_RE.finditer(text or ""):
+        path = match.group("path").strip()
+        out[path] = match.group("body")
     return out
 
 
 def extract_fenced(text: str, lang: str | None = None) -> str | None:
     """Return the first fenced code block, optionally filtered by language tag."""
-    for m in _FENCE_RE.finditer(text or ""):
-        if lang is None or m.group("lang").lower() == lang.lower():
-            return m.group("body").strip()
+    for match in _FENCE_RE.finditer(text or ""):
+        if lang is None or match.group("lang").lower() == lang.lower():
+            return match.group("body").strip()
     return None
 
 
@@ -48,5 +49,5 @@ def extract_section(text: str, heading: str) -> str | None:
         rf"^#{{1,6}}\s*{re.escape(heading)}\s*$\n(?P<body>.*?)(?=^#{{1,6}}\s|\Z)",
         re.DOTALL | re.MULTILINE | re.IGNORECASE,
     )
-    m = pattern.search(text or "")
-    return m.group("body").strip() if m else None
+    match = pattern.search(text or "")
+    return match.group("body").strip() if match else None

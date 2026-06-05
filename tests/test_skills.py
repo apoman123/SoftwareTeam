@@ -34,8 +34,12 @@ def test_every_character_loads_its_skill_md_library():
     from software_team.skills.registry import ROLE_SKILLS, guidance_for, tools_for
 
     expected = {
-        "product_manager", "ux_designer", "tech_lead",
-        "software_engineer", "qa_engineer", "devops_sre",
+        "product_manager",
+        "ux_designer",
+        "tech_lead",
+        "software_engineer",
+        "qa_engineer",
+        "devops_sre",
     }
     assert set(ROLE_SKILLS) == expected
     for role, skills in ROLE_SKILLS.items():

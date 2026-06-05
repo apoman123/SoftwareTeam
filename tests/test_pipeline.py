@@ -1,7 +1,5 @@
 """End-to-end smoke test of the whole graph in dry-run mode."""
 
-from pathlib import Path
-
 from software_team.graph import build_graph
 from software_team.state import new_state
 

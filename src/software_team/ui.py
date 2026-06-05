@@ -25,9 +25,10 @@ PHASE_LABELS = {
 
 
 def announce(role: str, phase: str, action: str, skills: list[str]) -> None:
+    """Print a panel naming the acting character, the phase, the action, and its skills."""
     label = ROLE_LABELS.get(role, role)
     phase_label = PHASE_LABELS.get(phase, phase)
-    skill_str = ", ".join(f"[cyan]{s}[/cyan]" for s in skills) if skills else "—"
+    skill_str = ", ".join(f"[cyan]{name}[/cyan]" for name in skills) if skills else "—"
     console.print(
         Panel(
             f"[bold]{action}[/bold]\nskills: {skill_str}",
@@ -39,9 +40,11 @@ def announce(role: str, phase: str, action: str, skills: list[str]) -> None:
 
 
 def note(message: str) -> None:
+    """Print a dim, indented progress note."""
     console.print(f"  [dim]›[/dim] {message}")
 
 
 def written(paths: list[str]) -> None:
-    for p in paths:
-        console.print(f"    [green]✓[/green] {p}")
+    """Print a green checkmark line for each written path."""
+    for path in paths:
+        console.print(f"    [green]✓[/green] {path}")

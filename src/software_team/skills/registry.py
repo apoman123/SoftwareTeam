@@ -14,16 +14,18 @@ ROLE_SKILLS: dict[str, list[Skill]] = load_all()
 
 
 def skills_for(role: str) -> list[Skill]:
+    """Return the loaded skills for ``role`` (empty if the role is unknown)."""
     return ROLE_SKILLS.get(role, [])
 
 
 def skill_names(role: str) -> list[str]:
-    return [s.name for s in skills_for(role)]
+    """Return the names of ``role``'s skills, for display/announcements."""
+    return [skill.name for skill in skills_for(role)]
 
 
 def tools_for(role: str) -> list[object]:
-    """Executable (tool-backed) skills for a role, for ReAct binding."""
-    return [s.tool for s in skills_for(role) if s.tool is not None]
+    """Return the executable (tool-backed) skills for a role, for ReAct binding."""
+    return [skill.tool for skill in skills_for(role) if skill.tool is not None]
 
 
 def guidance_for(role: str) -> str:
@@ -36,7 +38,7 @@ def skills_catalog() -> str:
     lines: list[str] = []
     for role in CHARACTERS:
         lines.append(f"### {role}")
-        for s in skills_for(role):
-            lines.append(f"- `{s.name}` ({s.kind}): {s.description}")
+        for skill in skills_for(role):
+            lines.append(f"- `{skill.name}` ({skill.kind}): {skill.description}")
         lines.append("")
     return "\n".join(lines)

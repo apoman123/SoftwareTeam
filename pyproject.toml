@@ -20,6 +20,24 @@ dependencies = [
 dev = [
     "ruff>=0.4",
 ]
+# LLM providers (pick the one you use; Ollama ships in the base dependencies).
+openai = [
+    "langchain-openai>=0.2",
+]
+google = [
+    "langchain-google-genai>=2.0",
+]
+llama-cpp = [
+    "langchain-community>=0.3",
+    "llama-cpp-python>=0.3",
+]
+# Internet search so every character can fetch the latest info (e.g. current APIs).
+search = [
+    "ddgs>=9.0",
+]
+tavily = [
+    "tavily-python>=0.5",
+]
 
 [project.scripts]
 software-team = "software_team.main:app"
@@ -33,3 +51,41 @@ packages = ["src/software_team"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Ruff enforces the Google Python Style Guide (naming, imports, docstrings) plus a
+# pragmatic set of correctness/modernisation lints. Run `uv run ruff check .`.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (Google import grouping/ordering)
+    "N",    # pep8-naming (Google naming conventions)
+    "UP",   # pyupgrade (modern syntax)
+    "B",    # flake8-bugbear (likely bugs)
+    "SIM",  # flake8-simplify
+    "BLE",  # flake8-blind-except (flag bare `except Exception`)
+    "RUF",  # Ruff-specific rules
+    "D",    # pydocstyle (Google docstring convention)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["software_team"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer expresses CLI options as call-valued argument defaults; this is intended.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests favour readability over full API docstrings.
+"tests/**" = ["D"]
+# Console glyphs (e.g. "›") are intentional and not confusable in this context.
+"src/software_team/ui.py" = ["RUF001"]

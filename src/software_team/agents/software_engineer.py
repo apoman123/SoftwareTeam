@@ -9,10 +9,9 @@ workspace.
 from __future__ import annotations
 
 from .. import ui
-from ..skills.common import filesystem
-from ..skills.common.authoring import parse_file_blocks
 from ..skills.registry import skill_names
-from .base import generate, output_dir, relpath, with_skills
+from ..state import TeamState
+from .base import emit_files
 
 ROLE = "software_engineer"
 
@@ -32,19 +31,29 @@ output, find the root cause, and re-emit ONLY the files you change with correcte
 contents. {FILE_PROTOCOL}"""
 
 
-def _persist_blocks(state: dict, text: str) -> dict[str, str]:
-    files = parse_file_blocks(text)
-    if files:
-        written = filesystem.write_files(output_dir(state), files)
-        ui.written(relpath(state, written))
-    else:
-        ui.note("[yellow]no file blocks parsed from model output[/yellow]")
-    return files
+def _stack_hint(state: TeamState) -> str:
+    """Return a short keyword hint of the chosen stack, for grounding code-gen searches."""
+    stack = (state.get("tech_stack") or "").strip()
+    if not stack:
+        return "Python FastAPI"
+    first_line = next((line.strip(" -*#") for line in stack.splitlines() if line.strip()), "")
+    return (first_line or stack)[:120]
 
 
-def software_engineer_node(state: dict) -> dict:
+def _build_research_queries(state: TeamState) -> list[str]:
+    """Return the web queries that ground the build node in current library APIs."""
+    hint = _stack_hint(state)
+    return [
+        f"latest API and recommended usage for {hint} 2026",
+        "latest FastAPI and Pydantic v2 version and best practices 2026",
+    ]
+
+
+def software_engineer_node(state: TeamState) -> TeamState:
+    """Implement the service plus unit tests from the architecture and acceptance criteria."""
     ui.announce(
-        ROLE, "code",
+        ROLE,
+        "code",
         "Implementing the service and unit tests",
         skill_names(ROLE),
     )
@@ -58,22 +67,41 @@ def software_engineer_node(state: dict) -> dict:
     if state.get("review_status") == "changes" and state.get("review_notes"):
         user += f"\n\n### Address this review feedback\n{state['review_notes']}"
 
-    text = generate(ROLE, with_skills(BUILD_SYSTEM, ROLE), user, state)
-    files = _persist_blocks(state, text)
-    unit_tests = "\n\n".join(c for p, c in files.items() if "test" in p)
+    files = emit_files(
+        state,
+        model_role=ROLE,
+        character=ROLE,
+        system_prompt=BUILD_SYSTEM,
+        user_prompt=user,
+        research_queries=_build_research_queries(state),
+    )
+    unit_tests = "\n\n".join(content for path, content in files.items() if "test" in path)
     return {"source_files": files, "unit_tests": unit_tests, "current_phase": "code"}
 
 
-def software_engineer_fix_node(state: dict) -> dict:
+def software_engineer_fix_node(state: TeamState) -> TeamState:
+    """Read the failing pytest output and re-emit corrected files (bounded hotfix loop)."""
     iters = state.get("fix_iters", 0) + 1
-    ui.announce(ROLE, "deploy", f"Fixing failing tests (hotfix pass {iters})", ["fix-bug", "run-tests"])
-    listing = "\n\n".join(f"# {p}\n```\n{c}\n```" for p, c in state.get("source_files", {}).items())
+    ui.announce(
+        ROLE, "deploy", f"Fixing failing tests (hotfix pass {iters})", ["fix-bug", "run-tests"]
+    )
+    listing = "\n\n".join(
+        f"# {path}\n```\n{content}\n```" for path, content in state.get("source_files", {}).items()
+    )
     user = (
         "The test suite failed. Fix the code.\n\n"
         f"### pytest output\n{state.get('test_results', '')}\n\n"
         f"### Current files\n{listing}\n\n"
         f"{FILE_PROTOCOL}"
     )
-    text = generate("software_engineer_fix", with_skills(FIX_SYSTEM, ROLE), user, state)
-    files = _persist_blocks(state, text)
+    files = emit_files(
+        state,
+        model_role="software_engineer_fix",
+        character=ROLE,
+        system_prompt=FIX_SYSTEM,
+        user_prompt=user,
+        research_queries=[
+            f"latest API and recommended usage for {_stack_hint(state)} 2026",
+        ],
+    )
     return {"source_files": files, "fix_iters": iters, "current_phase": "deploy"}

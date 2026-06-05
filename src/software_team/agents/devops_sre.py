@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from .. import ui
 from ..skills.common import filesystem
-from ..skills.common.authoring import parse_file_blocks
-from .base import generate, output_dir, relpath, with_skills
+from ..state import TeamState
+from .base import emit_files, output_dir, relpath
 
 ROLE = "devops_sre"
 
@@ -31,22 +31,27 @@ config (monitoring/prometheus.yml), alert rules for error-rate and latency
 (docs/runbook.md). Emit files as <<<FILE path >>> ... <<<END>>> blocks, no fences."""
 
 
-def _emit(state: dict, role: str, system: str, user: str) -> dict[str, str]:
-    text = generate(role, with_skills(system, ROLE), user, state)
-    files = parse_file_blocks(text)
-    if files:
-        ui.written(relpath(state, filesystem.write_files(output_dir(state), files)))
-    else:
-        ui.note("[yellow]no file blocks parsed[/yellow]")
-    return files
-
-
-def devops_ci_node(state: dict) -> dict:
-    ui.announce(ROLE, "code", "Containerising and wiring up CI", ["containerize-service", "build-ci-pipeline"])
-    files = _emit(
-        state, "devops_ci", CI_SYSTEM,
-        "Containerise this Python service and set up CI. The app runs with "
-        "`uvicorn app.main:app`. Provide Dockerfile and .github/workflows/ci.yml.",
+def devops_ci_node(state: TeamState) -> TeamState:
+    """Containerise the service and wire up the CI workflow."""
+    ui.announce(
+        ROLE,
+        "code",
+        "Containerising and wiring up CI",
+        ["containerize-service", "build-ci-pipeline"],
+    )
+    files = emit_files(
+        state,
+        model_role="devops_ci",
+        character=ROLE,
+        system_prompt=CI_SYSTEM,
+        user_prompt=(
+            "Containerise this Python service and set up CI. The app runs with "
+            "`uvicorn app.main:app`. Provide Dockerfile and .github/workflows/ci.yml."
+        ),
+        research_queries=[
+            "latest GitHub Actions workflow syntax and current action versions 2026",
+            "latest official Python Docker base image tags 2026",
+        ],
     )
     return {
         "dockerfile": files.get("Dockerfile", ""),
@@ -56,36 +61,57 @@ def devops_ci_node(state: dict) -> dict:
     }
 
 
-def devops_cd_node(state: dict) -> dict:
+def devops_cd_node(state: TeamState) -> TeamState:
+    """Set up continuous deployment, IaC, and Kubernetes manifests."""
     ui.announce(
-        ROLE, "deploy",
+        ROLE,
+        "deploy",
         "Building CD pipeline, IaC and Kubernetes manifests",
         ["build-cd-pipeline", "write-infrastructure-code", "write-k8s-manifests"],
     )
-    files = _emit(
-        state, "devops_cd", CD_SYSTEM,
-        "Set up continuous deployment for the containerised service with a safe rollout, "
-        "Terraform, and Kubernetes manifests (deployment with readiness probe, service).",
+    files = emit_files(
+        state,
+        model_role="devops_cd",
+        character=ROLE,
+        system_prompt=CD_SYSTEM,
+        user_prompt=(
+            "Set up continuous deployment for the containerised service with a safe rollout, "
+            "Terraform, and Kubernetes manifests (deployment with readiness probe, service)."
+        ),
+        research_queries=[
+            "latest Kubernetes Deployment and Service apiVersion 2026",
+            "current Terraform syntax and best practices 2026",
+        ],
     )
     return {
         "cd_config": files.get(".github/workflows/cd.yml", ""),
         "iac": files.get("terraform/main.tf", ""),
-        "k8s": "\n".join(c for p, c in files.items() if p.startswith("k8s/")),
+        "k8s": "\n".join(content for path, content in files.items() if path.startswith("k8s/")),
         "source_files": files,
         "current_phase": "deploy",
     }
 
 
-def operate_node(state: dict) -> dict:
+def operate_node(state: TeamState) -> TeamState:
+    """Stand up observability and a runbook, then run a simulated post-deploy health check."""
     ui.announce(
-        ROLE, "operate",
+        ROLE,
+        "operate",
         "Standing up monitoring, alerts and a runbook; running a post-deploy health check",
         ["configure-observability", "write-runbook"],
     )
-    files = _emit(
-        state, "operate", OPERATE_SYSTEM,
-        "Set up observability for the deployed Task API: Prometheus config, alert rules "
-        "(error rate, latency), and an on-call runbook with DR steps.",
+    files = emit_files(
+        state,
+        model_role="operate",
+        character=ROLE,
+        system_prompt=OPERATE_SYSTEM,
+        user_prompt=(
+            "Set up observability for the deployed Task API: Prometheus config, alert rules "
+            "(error rate, latency), and an on-call runbook with DR steps."
+        ),
+        research_queries=[
+            "latest Prometheus scrape config and alerting rule syntax 2026",
+        ],
     )
 
     # Simulate a post-deploy health check + product metrics for the next cycle (PM input).
@@ -103,13 +129,14 @@ def operate_node(state: dict) -> dict:
         "- Add authentication for multi-user support.\n"
         "- Instrument real `/metrics` endpoint for the dashboards above.\n"
     )
-    out = output_dir(state)
-    path = filesystem.write_doc(out, "operations_report.md", ops_report)
+    path = filesystem.write_doc(output_dir(state), "operations_report.md", ops_report)
     ui.written(relpath(state, [path]))
     ui.note(f"post-deploy status: [bold]{deploy_status}[/bold]")
 
     return {
-        "monitoring": "\n".join(c for p, c in files.items() if p.startswith("monitoring/")),
+        "monitoring": "\n".join(
+            content for name, content in files.items() if name.startswith("monitoring/")
+        ),
         "runbook": files.get("docs/runbook.md", ""),
         "source_files": files,
         "deploy_status": deploy_status,

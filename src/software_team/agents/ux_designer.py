@@ -10,6 +10,7 @@ from __future__ import annotations
 from .. import ui
 from ..skills.common import filesystem
 from ..skills.registry import skill_names
+from ..state import TeamState
 from .base import generate, output_dir, relpath, with_skills
 
 ROLE = "ux_designer"
@@ -20,9 +21,11 @@ states. If the product is an API or backend service, you keep the UX minimal: de
 the primary user journey and a small reference client. Output markdown only."""
 
 
-def ux_designer_node(state: dict) -> dict:
+def ux_designer_node(state: TeamState) -> TeamState:
+    """Design the user flow, ASCII wireframes, and component/state notes from the PM stories."""
     ui.announce(
-        ROLE, "plan",
+        ROLE,
+        "plan",
         "Designing the user flow and wireframes",
         skill_names(ROLE),
     )
@@ -32,7 +35,16 @@ def ux_designer_node(state: dict) -> dict:
         "Produce markdown with:\n## User Flow (numbered)\n"
         "## Wireframe (ASCII inside a code block)\n## Component / State Notes\n"
     )
-    doc = generate(ROLE, with_skills(SYSTEM, ROLE), user, state)
+    doc = generate(
+        ROLE,
+        with_skills(SYSTEM, ROLE),
+        user,
+        state,
+        research_queries=[
+            "latest WCAG accessibility guidelines 2026",
+            "current UX usability best practices 2026",
+        ],
+    )
     path = filesystem.write_doc(output_dir(state), "ux_design.md", doc)
     ui.written(relpath(state, [path]))
     return {"ux_design": doc, "current_phase": "plan"}

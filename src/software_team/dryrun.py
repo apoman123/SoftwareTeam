@@ -176,13 +176,13 @@ def test_delete_removes_task():
         svc.get(task.id)
 '''
 
-_REQUIREMENTS = '''\
+_REQUIREMENTS = """\
 fastapi>=0.110
 uvicorn>=0.29
 pydantic>=2.7
 httpx>=0.27
 pytest>=8.0
-'''
+"""
 
 SWE_FILES = {
     "app/__init__.py": '"""Task API application package."""\n',
@@ -238,7 +238,7 @@ QA_FILES = {"tests/test_e2e.py": _E2E_TESTS}
 # --------------------------------------------------------------------------- #
 
 CI_FILES = {
-    "Dockerfile": '''\
+    "Dockerfile": """\
 FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
@@ -246,8 +246,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-''',
-    ".github/workflows/ci.yml": '''\
+""",
+    ".github/workflows/ci.yml": """\
 name: CI
 on:
   pull_request:
@@ -264,11 +264,11 @@ jobs:
       - run: pip install -r requirements.txt
       - run: ruff check . || true
       - run: pytest -q
-''',
+""",
 }
 
 CD_FILES = {
-    ".github/workflows/cd.yml": '''\
+    ".github/workflows/cd.yml": """\
 name: CD
 on:
   push:
@@ -282,8 +282,8 @@ jobs:
         run: docker build -t task-api:${{ github.sha }} .
       - name: Deploy (canary -> full)
         run: echo "kubectl set image deploy/task-api task-api=task-api:${{ github.sha }}"
-''',
-    "terraform/main.tf": '''\
+""",
+    "terraform/main.tf": """\
 terraform {
   required_providers {
     kubernetes = {
@@ -303,8 +303,8 @@ resource "kubernetes_namespace" "app" {
     name = "task-api"
   }
 }
-''',
-    "k8s/deployment.yaml": '''\
+""",
+    "k8s/deployment.yaml": """\
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -331,8 +331,8 @@ spec:
               port: 8000
             initialDelaySeconds: 3
             periodSeconds: 10
-''',
-    "k8s/service.yaml": '''\
+""",
+    "k8s/service.yaml": """\
 apiVersion: v1
 kind: Service
 metadata:
@@ -344,7 +344,7 @@ spec:
   ports:
     - port: 80
       targetPort: 8000
-''',
+""",
 }
 
 # --------------------------------------------------------------------------- #
@@ -352,7 +352,7 @@ spec:
 # --------------------------------------------------------------------------- #
 
 OPERATE_FILES = {
-    "monitoring/prometheus.yml": '''\
+    "monitoring/prometheus.yml": """\
 global:
   scrape_interval: 15s
 scrape_configs:
@@ -360,8 +360,8 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["task-api.task-api.svc:80"]
-''',
-    "monitoring/alerts.yml": '''\
+""",
+    "monitoring/alerts.yml": """\
 groups:
   - name: task-api
     rules:
@@ -379,8 +379,8 @@ groups:
           severity: warn
         annotations:
           summary: "Task API p95 latency above 500ms"
-''',
-    "docs/runbook.md": '''\
+""",
+    "docs/runbook.md": """\
 # Task API On-Call Runbook
 
 ## Service overview
@@ -398,7 +398,7 @@ FastAPI service exposing CRUD over tasks. Stateless; scale horizontally.
 ## Disaster recovery
 - Nightly DB snapshots (when persistence is added); restore from latest snapshot.
 - Re-apply IaC: `terraform apply` then `kubectl apply -f k8s/`.
-''',
+""",
 }
 
 # --------------------------------------------------------------------------- #

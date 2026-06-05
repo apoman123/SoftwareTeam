@@ -47,11 +47,12 @@ def _parse_skill_md(md_path: Path) -> Skill:
 
 
 def load_character_skills(character: str) -> list[Skill]:
+    """Load and parse every ``SKILL.md`` for ``character``, sorted by skill directory."""
     base = LIBRARY / character
     if not base.exists():
         return []
     skills: list[Skill] = []
-    for skill_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+    for skill_dir in sorted(path for path in base.iterdir() if path.is_dir()):
         md = skill_dir / "SKILL.md"
         if md.exists():
             skills.append(_parse_skill_md(md))
@@ -59,4 +60,5 @@ def load_character_skills(character: str) -> list[Skill]:
 
 
 def load_all() -> dict[str, list[Skill]]:
+    """Load every character's skills, keyed by character name."""
     return {character: load_character_skills(character) for character in CHARACTERS}

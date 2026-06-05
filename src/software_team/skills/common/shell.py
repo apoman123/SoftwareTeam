@@ -17,15 +17,19 @@ from langchain_core.tools import tool
 
 @dataclass
 class CommandResult:
+    """The outcome of a subprocess run: exit code plus captured stdout/stderr."""
+
     returncode: int
     stdout: str
     stderr: str
 
     @property
     def ok(self) -> bool:
+        """Return whether the command exited successfully (zero exit code)."""
         return self.returncode == 0
 
     def summary(self, max_chars: int = 4000) -> str:
+        """Return combined stdout/stderr, trimmed to ``max_chars`` for prompt embedding."""
         body = (self.stdout + ("\n" + self.stderr if self.stderr else "")).strip()
         if len(body) > max_chars:
             body = body[:max_chars] + "\n... (truncated)"
