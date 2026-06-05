@@ -1,6 +1,6 @@
 ---
 name: define-api-spec
-description: Use when defining a service boundary, to write a contract-first OpenAPI specification with correct HTTP semantics.
+description: Writes a contract-first OpenAPI specification with correct HTTP semantics. Use when defining a service boundary.
 ---
 
 # Define the API spec

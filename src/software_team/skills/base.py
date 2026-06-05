@@ -1,8 +1,9 @@
 """The Skill abstraction.
 
-Following the Agent Skills convention (a `SKILL.md` per skill: YAML frontmatter with a
-verb-based `name` and a "use when" `description`, plus a markdown body of instructions),
-a loaded Skill carries that parsed metadata and body. The body is composed into the
+Following Anthropic's Agent Skills convention (a `SKILL.md` per skill: YAML frontmatter
+with a verb-based `name` and a third-person `description` of what it does and when to use
+it, plus a markdown body of instructions), a loaded Skill carries that parsed metadata and
+body. The body is composed into the
 owning character's system prompt at runtime, so the SKILL.md files genuinely drive
 behaviour. Skills that perform real I/O also bind a LangChain `tool` (named in the
 frontmatter) so a tool-capable model can invoke them in a ReAct loop.

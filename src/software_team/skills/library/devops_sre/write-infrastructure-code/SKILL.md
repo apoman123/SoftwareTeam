@@ -1,6 +1,6 @@
 ---
 name: write-infrastructure-code
-description: Use when provisioning environments, to describe infrastructure declaratively with Terraform so environments are identical.
+description: Describes infrastructure declaratively with Terraform so environments are identical. Use when provisioning environments.
 tool: write_source_file
 ---
 

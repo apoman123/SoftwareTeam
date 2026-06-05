@@ -1,6 +1,6 @@
 ---
 name: parse-spec
-description: Use when starting from a raw stakeholder spec or use-case file, to extract goals, actors, use-cases and constraints before writing requirements.
+description: Extracts the business goal, actors, use-cases, and constraints from a raw stakeholder spec. Use when starting from a spec or use-case file before writing requirements.
 ---
 
 # Parse the spec

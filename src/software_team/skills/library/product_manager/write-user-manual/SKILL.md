@@ -1,6 +1,6 @@
 ---
 name: write-user-manual
-description: Use after a release, to turn shipped features into an end-user manual and concise release notes.
+description: Turns shipped features into an end-user manual and concise release notes. Use after a release when documenting it for users.
 ---
 
 # Write the user manual and release notes

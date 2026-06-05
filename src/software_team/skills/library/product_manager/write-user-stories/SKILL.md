@@ -1,6 +1,6 @@
 ---
 name: write-user-stories
-description: Use when turning extracted needs into backlog items, to write INVEST-quality user stories that deliver end-to-end value.
+description: Writes INVEST-quality user stories that slice vertically and deliver end-to-end value. Use when turning extracted needs into backlog items.
 ---
 
 # Write user stories

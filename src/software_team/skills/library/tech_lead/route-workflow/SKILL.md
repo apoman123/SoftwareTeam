@@ -1,6 +1,6 @@
 ---
 name: route-workflow
-description: Use when supervising the pipeline, to decide whether to loop work back or advance to the next phase within iteration caps.
+description: Decides whether to loop work back or advance to the next phase within the iteration caps. Use when supervising the pipeline.
 ---
 
 # Route the workflow (supervisor)

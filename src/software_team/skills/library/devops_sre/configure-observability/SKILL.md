@@ -1,6 +1,6 @@
 ---
 name: configure-observability
-description: Use when operating a service, to instrument the four golden signals and alert on SLO-threatening symptoms.
+description: Instruments the four golden signals and alerts on SLO-threatening symptoms. Use when operating a service.
 tool: write_source_file
 ---
 

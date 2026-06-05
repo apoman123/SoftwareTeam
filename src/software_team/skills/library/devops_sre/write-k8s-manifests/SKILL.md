@@ -1,6 +1,6 @@
 ---
 name: write-k8s-manifests
-description: Use when deploying to Kubernetes, to write manifests with probes and replicas that make rolling updates safe.
+description: Writes Kubernetes manifests with probes and replicas that make rolling updates safe. Use when deploying to Kubernetes.
 tool: write_source_file
 ---
 

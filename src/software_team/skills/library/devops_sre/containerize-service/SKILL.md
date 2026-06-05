@@ -1,6 +1,6 @@
 ---
 name: containerize-service
-description: Use when packaging a service for deployment, to write a small, reproducible, 12-factor Dockerfile.
+description: Writes a small, reproducible, 12-factor Dockerfile. Use when packaging a service for deployment.
 tool: write_source_file
 ---
 

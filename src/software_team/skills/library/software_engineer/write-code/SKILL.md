@@ -1,6 +1,6 @@
 ---
 name: write-code
-description: Use when implementing a feature, to write clean, idiomatic, SOLID code and persist it to the workspace.
+description: Writes clean, idiomatic, SOLID code and persists it to the workspace. Use when implementing a feature.
 tool: write_source_file
 ---
 

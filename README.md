@@ -42,15 +42,27 @@ running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
 
 ### The skills library (`src/software_team/skills/`)
 
-Skills follow the **Agent Skills convention** (as used by
-[forgecode's `create-skill`](https://github.com/tailcallhq/forgecode/tree/main/crates/forge_repo/src/skills/create-skill)):
-**each skill is a directory with a `SKILL.md`** — YAML frontmatter (`name`, a "use when"
-`description`, and an optional `tool:`) plus a concise markdown body of instructions.
-The bodies encode real, researched practice (INVEST, MoSCoW, Nielsen's heuristics, the
-C4 model, ADRs, equivalence partitioning / boundary-value analysis, the test pyramid,
-12-factor, the four golden signals, SLO/SLI/error budgets, blue-green/canary rollouts,
-…). At runtime each character's system prompt is **composed from its skills' bodies**, so
-the files in this directory actually drive behaviour — they are not just documentation.
+Skills follow **[Anthropic's Agent Skills convention](https://platform.claude.com/docs/en/docs/agents-and-tools/agent-skills/overview)**:
+**each skill is a directory containing a `SKILL.md`** — YAML frontmatter plus a concise
+markdown body of instructions. The two required frontmatter fields obey Anthropic's
+[authoring rules](https://platform.claude.com/docs/en/docs/agents-and-tools/agent-skills/best-practices):
+
+- **`name`** — lowercase letters, numbers and hyphens only, ≤ 64 characters, no reserved
+  words (`anthropic`/`claude`); it matches the skill's directory name. We use
+  action-oriented verb names (`write-code`, `run-tests`) — an accepted Anthropic pattern
+  (its stated preference is the gerund form, e.g. `writing-code`).
+- **`description`** — third person, stating both **what** the skill does and **when** to
+  use it, ≤ 1024 characters. We follow Anthropic's recommended shape *"&lt;what it does&gt;.
+  Use when &lt;trigger&gt;."*, e.g. `run-tests`: *"Runs the test suite locally and self-checks
+  the result. Use before declaring work done."*
+
+Per Anthropic's **progressive disclosure** principle the bodies are kept short (well under
+the 500-line guideline). They encode real, researched practice (INVEST, MoSCoW, Nielsen's
+heuristics, the C4 model, ADRs, equivalence partitioning / boundary-value analysis, the
+test pyramid, 12-factor, the four golden signals, SLO/SLI/error budgets,
+blue-green/canary rollouts, …). At runtime each character's system prompt is **composed
+from its skills' bodies**, so the files in this directory actually drive behaviour — they
+are not just documentation.
 
 ```text
 skills/
@@ -63,12 +75,15 @@ skills/
     software_engineer/  qa_engineer/    devops_sre/
 ```
 
-A skill becomes **tool-backed** by naming a tool in its frontmatter (e.g. `tool: run_tests`);
-the loader resolves it against `common/tools.py` and binds the real LangChain `@tool`.
+Beyond the two standard fields, a `SKILL.md` may carry one **project-specific extension** —
+an optional **`tool:`** key naming an executable to bind (e.g. `tool: run_tests`). The
+loader resolves it against `common/tools.py` and binds the real LangChain `@tool`, making
+the skill **tool-backed**; skills without it are **reasoning** skills the model performs
+in context.
 
-**Add a skill:** create `library/<character>/<verb-based-name>/SKILL.md` with `name` and
-`description` frontmatter and a short instructions body. It is loaded automatically — no
-code change. Add `tool: <name>` to make it executable.
+**Add a skill:** create `library/<character>/<verb-name>/SKILL.md` with a conforming
+`name` and `description` (see the rules above) and a short instructions body. It is loaded
+automatically — no code change. Add `tool: <name>` to make it executable.
 
 Sources for the practices baked into the skill bodies:
 [INVEST](https://www.volkerdon.com/pages/invest-criteria) ·

@@ -1,6 +1,6 @@
 ---
 name: write-adr
-description: Use when making an architecturally-significant decision, to record it as a concise Architecture Decision Record.
+description: Records an architecturally-significant decision as a concise Architecture Decision Record. Use when making such a decision.
 ---
 
 # Write an ADR

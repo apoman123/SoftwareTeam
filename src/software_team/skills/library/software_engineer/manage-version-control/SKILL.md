@@ -1,6 +1,6 @@
 ---
 name: manage-version-control
-description: Use when proposing changes, to keep pull requests small and commit history clear and automatable.
+description: Keeps pull requests small and commit history clear and automatable. Use when proposing changes.
 ---
 
 # Manage version control

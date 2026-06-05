@@ -1,6 +1,6 @@
 ---
 name: plan-performance-tests
-description: Use when verifying non-functional requirements, to sketch a load/stress scenario with pass/fail thresholds.
+description: Sketches a load/stress scenario with pass/fail thresholds. Use when verifying non-functional requirements.
 ---
 
 # Plan performance tests

@@ -1,6 +1,6 @@
 ---
 name: run-tests
-description: Use before declaring work done, to run the test suite locally and self-check.
+description: Runs the test suite locally and self-checks the result. Use before declaring work done.
 tool: run_tests
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: build-ci-pipeline
-description: Use when automating integration, to author a GitHub Actions CI workflow that gates every pull request.
+description: Authors a GitHub Actions CI workflow that gates every pull request. Use when automating integration.
 ---
 
 # Build the CI pipeline

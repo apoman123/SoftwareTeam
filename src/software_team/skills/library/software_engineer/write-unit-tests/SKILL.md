@@ -1,6 +1,6 @@
 ---
 name: write-unit-tests
-description: Use when implementing logic, to write fast, isolated unit tests that form the base of the test pyramid.
+description: Writes fast, isolated unit tests that form the base of the test pyramid. Use when implementing logic.
 ---
 
 # Write unit tests

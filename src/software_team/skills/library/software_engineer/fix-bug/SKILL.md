@@ -1,6 +1,6 @@
 ---
 name: fix-bug
-description: Use when tests fail or an incident is reported, to find the root cause and patch it minimally.
+description: Finds the root cause of a failure and patches it minimally. Use when tests fail or an incident is reported.
 ---
 
 # Fix the bug

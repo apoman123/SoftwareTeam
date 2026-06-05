@@ -1,6 +1,6 @@
 ---
 name: select-tech-stack
-description: Use when starting technical design, to choose language, framework, datastore and libraries with justified trade-offs.
+description: Chooses language, framework, datastore, and libraries with justified trade-offs. Use when starting technical design.
 ---
 
 # Select the tech stack

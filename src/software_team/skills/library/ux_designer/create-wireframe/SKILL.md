@@ -1,6 +1,6 @@
 ---
 name: create-wireframe
-description: Use when communicating layout for key screens, to produce low-fidelity ASCII/markdown wireframes that show hierarchy and primary actions.
+description: Produces low-fidelity ASCII/markdown wireframes that show hierarchy and primary actions. Use when communicating the layout of key screens.
 ---
 
 # Create a wireframe

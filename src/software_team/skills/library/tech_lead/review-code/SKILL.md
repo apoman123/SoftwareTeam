@@ -1,6 +1,6 @@
 ---
 name: review-code
-description: Use when an engineer submits code, to review it as the quality gate and approve or request changes.
+description: Reviews submitted code as the quality gate and approves it or requests changes. Use when an engineer submits code for review.
 ---
 
 # Review code

@@ -1,6 +1,6 @@
 ---
 name: ensure-accessibility
-description: Use when validating a design for inclusivity, to check it against WCAG's POUR principles.
+description: Checks a design against WCAG's POUR principles. Use when validating a design for inclusivity and accessibility.
 ---
 
 # Ensure accessibility (WCAG)

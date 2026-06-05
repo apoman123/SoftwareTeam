@@ -1,6 +1,6 @@
 ---
 name: write-runbook
-description: Use when preparing for on-call, to write an incident runbook and disaster-recovery procedure.
+description: Writes an incident runbook and disaster-recovery procedure. Use when preparing for on-call.
 ---
 
 # Write the runbook

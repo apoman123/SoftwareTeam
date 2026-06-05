@@ -1,6 +1,6 @@
 ---
 name: analyze-edge-cases
-description: Use when hunting for defects beyond the happy path, to enumerate edge cases and failure modes.
+description: Enumerates edge cases and failure modes beyond the happy path. Use when hunting for defects.
 ---
 
 # Analyse edge cases

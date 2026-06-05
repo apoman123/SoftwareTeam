@@ -1,6 +1,6 @@
 ---
 name: apply-usability-heuristics
-description: Use when reviewing a design for usability, to evaluate it against Nielsen's 10 heuristics and flag violations.
+description: Evaluates a design against Nielsen's 10 usability heuristics and flags violations. Use when reviewing a design for usability.
 ---
 
 # Apply Nielsen's usability heuristics

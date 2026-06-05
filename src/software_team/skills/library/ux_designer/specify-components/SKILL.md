@@ -1,6 +1,6 @@
 ---
 name: specify-components
-description: Use when handing a design to engineering, to specify each component's states, validation rules and user-facing copy.
+description: Specifies each component's states, validation rules, and user-facing copy. Use when handing a design to engineering.
 ---
 
 # Specify components and states

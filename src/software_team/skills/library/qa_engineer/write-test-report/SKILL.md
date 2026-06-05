@@ -1,6 +1,6 @@
 ---
 name: write-test-report
-description: Use after the suite runs, to report test coverage, the latest results, and any residual risk.
+description: Reports test coverage, the latest results, and any residual risk. Use after the suite runs.
 ---
 
 # Write the test report

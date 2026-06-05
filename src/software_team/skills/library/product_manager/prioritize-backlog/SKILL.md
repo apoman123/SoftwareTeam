@@ -1,6 +1,6 @@
 ---
 name: prioritize-backlog
-description: Use when ordering the backlog for a release, to apply MoSCoW prioritisation and keep scope deliverable.
+description: Applies MoSCoW prioritisation to order the backlog and keep scope deliverable. Use when ordering the backlog for a release.
 ---
 
 # Prioritise the backlog (MoSCoW)

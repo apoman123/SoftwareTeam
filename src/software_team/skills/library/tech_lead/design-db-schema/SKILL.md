@@ -1,6 +1,6 @@
 ---
 name: design-db-schema
-description: Use when the system needs persistence, to design a SQL schema that enforces the domain's invariants.
+description: Designs a SQL schema that enforces the domain's invariants. Use when the system needs persistence.
 ---
 
 # Design the database schema

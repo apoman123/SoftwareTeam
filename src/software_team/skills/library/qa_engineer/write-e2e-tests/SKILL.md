@@ -1,6 +1,6 @@
 ---
 name: write-e2e-tests
-description: Use when validating user journeys, to write automated end-to-end / API tests that respect the test pyramid.
+description: Writes automated end-to-end / API tests that respect the test pyramid. Use when validating user journeys.
 tool: write_source_file
 ---
 

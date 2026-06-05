@@ -1,6 +1,6 @@
 ---
 name: design-test-cases
-description: Use when acceptance criteria are ready, to derive traceable test cases using black-box design techniques.
+description: Derives traceable test cases using black-box design techniques. Use when acceptance criteria are ready.
 ---
 
 # Design test cases

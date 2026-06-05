@@ -1,6 +1,6 @@
 ---
 name: execute-tests
-description: Use after deployment to Staging, to run the full suite as the quality gate that can block a release.
+description: Runs the full test suite as the quality gate that can block a release. Use after deployment to Staging.
 tool: run_tests
 ---
 

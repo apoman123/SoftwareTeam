@@ -1,6 +1,6 @@
 ---
 name: build-cd-pipeline
-description: Use when automating release, to author a CD workflow with a safe, progressive rollout and automatic rollback.
+description: Authors a CD workflow with a safe, progressive rollout and automatic rollback. Use when automating release.
 ---
 
 # Build the CD pipeline

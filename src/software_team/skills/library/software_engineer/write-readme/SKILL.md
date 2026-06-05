@@ -1,6 +1,6 @@
 ---
 name: write-readme
-description: Use once a feature is built, to write the repository README so other engineers and users can set up, run, and call the project.
+description: Writes the repository README so other engineers and users can set up, run, and call the project. Use once a feature is built.
 ---
 
 # Write the repository README

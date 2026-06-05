@@ -1,6 +1,6 @@
 ---
 name: track-metrics
-description: Use after a release, to read product/operational signals and user feedback and turn them into the next-cycle backlog.
+description: Reads product and operational signals plus user feedback and turns them into the next-cycle backlog. Use after a release to plan the next iteration.
 ---
 
 # Track metrics and close the loop

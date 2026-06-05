@@ -1,6 +1,6 @@
 ---
 name: inspect-project
-description: Use when scoping test coverage, to list the files under test in the workspace.
+description: Lists the files under test in the workspace. Use when scoping test coverage.
 tool: list_project_files
 ---
 

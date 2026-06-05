@@ -1,6 +1,6 @@
 ---
 name: define-acceptance-criteria
-description: Use when a story needs a testable definition of done, to write Gherkin Given/When/Then acceptance criteria covering happy and failure paths.
+description: Writes Gherkin Given/When/Then acceptance criteria covering happy and failure paths. Use when a user story needs a testable definition of done.
 ---
 
 # Define acceptance criteria

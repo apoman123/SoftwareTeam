@@ -1,7 +1,7 @@
 """Discover and parse SKILL.md skill files.
 
-Skills live under ``skills/library/<character>/<skill-name>/SKILL.md`` following the
-Agent Skills convention. This loader reads each file's YAML frontmatter (`name`,
+Skills live under ``skills/library/<character>/<skill-name>/SKILL.md`` following
+Anthropic's Agent Skills convention. This loader reads each file's YAML frontmatter (`name`,
 `description`, optional `tool`) and markdown body, binds any named tool, and groups the
 results by character so each character loads exactly its corresponding skills.
 """

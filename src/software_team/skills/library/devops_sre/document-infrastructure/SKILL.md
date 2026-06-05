@@ -1,6 +1,6 @@
 ---
 name: document-infrastructure
-description: Use at handoff, to document where and how the service is deployed — pipelines, cloud resources, configuration, and rollout strategy.
+description: Documents where and how the service is deployed — pipelines, cloud resources, configuration, and rollout strategy. Use at handoff.
 ---
 
 # Document the infrastructure

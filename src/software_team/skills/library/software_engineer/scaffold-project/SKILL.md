@@ -1,6 +1,6 @@
 ---
 name: scaffold-project
-description: Use when starting implementation, to lay out a clean project structure that keeps business logic testable.
+description: Lays out a clean project structure that keeps business logic testable. Use when starting implementation.
 ---
 
 # Scaffold the project

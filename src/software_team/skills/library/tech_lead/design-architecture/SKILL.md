@@ -1,6 +1,6 @@
 ---
 name: design-architecture
-description: Use when designing system structure, to describe it with the C4 model and a mermaid diagram, optimising for testability.
+description: Describes the system structure with the C4 model and a mermaid diagram, optimising for testability. Use when designing how the system fits together.
 ---
 
 # Design the architecture (C4 model)

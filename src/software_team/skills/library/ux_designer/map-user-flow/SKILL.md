@@ -1,6 +1,6 @@
 ---
 name: map-user-flow
-description: Use when designing how a user reaches their goal, to map the end-to-end journey including decision points and error paths.
+description: Maps the end-to-end user journey including decision points and error paths. Use when designing how a user reaches their goal.
 ---
 
 # Map the user flow
