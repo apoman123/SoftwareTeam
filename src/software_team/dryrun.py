@@ -542,6 +542,151 @@ _QA_PLAN = """\
 - Tool: locust or k6 against the deployed Staging service.
 """
 
+# --------------------------------------------------------------------------- #
+# Document & Handoff deliverables
+# --------------------------------------------------------------------------- #
+
+_README_DOC = """\
+# Task API
+
+A small HTTP service for tracking tasks: create, list, complete, and delete them.
+Business logic lives in a framework-free `TaskService`; `app/main.py` is a thin FastAPI
+adapter over it.
+
+## Prerequisites
+- Python 3.12+
+- `pip` (or `uv`)
+
+## Setup
+```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+```
+
+## Run
+```bash
+uvicorn app.main:app --reload    # serves on http://127.0.0.1:8000
+```
+Interactive API docs are then available at `http://127.0.0.1:8000/docs`.
+
+## Usage
+```bash
+# Health check
+curl http://127.0.0.1:8000/health
+
+# Create a task
+curl -X POST http://127.0.0.1:8000/tasks -H 'Content-Type: application/json' \\
+  -d '{"title": "buy milk"}'
+
+# List tasks
+curl http://127.0.0.1:8000/tasks
+
+# Complete / delete a task
+curl -X POST http://127.0.0.1:8000/tasks/1/complete
+curl -X DELETE http://127.0.0.1:8000/tasks/1
+```
+
+## Tests
+```bash
+pip install -r requirements.txt
+pytest -q
+```
+"""
+
+_INFRA_DOC = """\
+# Infrastructure & Deployment — Task API
+
+Where and how the service runs, for on-call and platform engineers. Pair this with the
+[on-call runbook](runbook.md), which covers what to do when an alert fires.
+
+## Pipelines
+- **CI** (`.github/workflows/ci.yml`) — on every pull request: install deps, lint, and
+  run `pytest`. A green CI gates merges to `main`.
+- **CD** (`.github/workflows/cd.yml`) — on push to `main`: build the container image and
+  roll it out (canary → full).
+
+## Container image
+- Built from `python:3.12-slim` (see `Dockerfile`); started with
+  `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+
+## Cloud resources (Terraform)
+- `terraform/main.tf` provisions the `task-api` Kubernetes namespace and providers.
+- Apply with `terraform init && terraform apply`.
+
+## Kubernetes
+- `k8s/deployment.yaml` — 2 replicas with a `/health` readiness probe.
+- `k8s/service.yaml` — ClusterIP service on port 80 → container port 8000.
+
+## Configuration
+| Variable | Where it lives | Purpose |
+|----------|----------------|---------|
+| `IMAGE_TAG` | CD pipeline (`github.sha`) | Image version to deploy |
+| Secrets | CI/CD secret store (never in git) | Registry / cloud credentials |
+
+## Rollout & rollback
+- **Rollout:** canary first, then promote to full once healthy.
+- **Rollback:** `kubectl rollout undo deploy/task-api -n task-api`.
+"""
+
+_TEST_REPORT = """\
+# Test Report — Task API
+
+## Coverage
+| Test case | Maps to | Type |
+|-----------|---------|------|
+| TC-1 create → 201 | US-1 | unit + e2e |
+| TC-2 empty title → 400 | edge | unit + e2e |
+| TC-3 list tasks | US-2 | e2e |
+| TC-4 complete → done | US-3 | unit + e2e |
+| TC-5 missing id → 404 | edge | unit + e2e |
+| TC-6 delete → 204 | US-4 | e2e |
+
+## Results
+- **Status: PASS.** Unit tests (`tests/test_service.py`) and end-to-end tests
+  (`tests/test_e2e.py`) all green on the latest run.
+- Reproduce: `pip install -r requirements.txt && pytest -q`.
+
+## Residual risk
+- No persistence yet — state is in-memory and lost on restart (not under test).
+- Performance/load scenario is sketched but not yet executed.
+- No authentication, so multi-user isolation is out of scope for this release.
+"""
+
+_USER_MANUAL = """\
+# User Manual — Task API
+
+A guide to using the Task API to keep track of your to-dos.
+
+## Creating a task
+Send the title of what you want to remember; the task starts as *not done*.
+Empty titles are rejected so your list stays meaningful.
+
+## Viewing your tasks
+List all tasks to see everything outstanding, with each task's title and whether it is done.
+
+## Completing a task
+Mark a task complete when you finish it; it then shows as done.
+
+## Deleting a task
+Remove a task you no longer need. Deleting something that is already gone reports "not found".
+
+## Release Notes
+
+### v1.0.0
+**Added**
+- Create a task with a title (US-1).
+- List all tasks (US-2).
+- Mark a task complete (US-3).
+- Delete a task (US-4).
+
+**Changed**
+- Empty or whitespace-only titles are now rejected with a clear error.
+
+**Fixed**
+- Acting on a missing task now returns a clear "not found" instead of a generic error.
+"""
+
 
 def canned_response(role: str, prompt: str) -> str:
     """Return a deterministic artifact for a role in dry-run mode."""
@@ -572,4 +717,12 @@ def canned_response(role: str, prompt: str) -> str:
         return file_blocks(CD_FILES)
     if role == "operate":
         return file_blocks(OPERATE_FILES)
+    if role == "software_engineer_readme":
+        return _README_DOC
+    if role == "qa_report":
+        return _TEST_REPORT
+    if role == "devops_docs":
+        return _INFRA_DOC
+    if role == "product_manager_docs":
+        return _USER_MANUAL
     return f"[dry-run stub for role={role}]"

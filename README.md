@@ -4,8 +4,9 @@ A cross-functional, "you build it, you run it" software team, implemented as a
 multi-agent system. Tell the Product Manager what you want — either a spec **file**
 describing your use cases, or a one-line feature **prompt** on the command line — and six
 AI characters carry the feature through the whole software lifecycle — Plan & Design →
-Code & Build → Deploy & Release → Operate & Monitor — writing a runnable project plus all
-its CI/CD and DevOps artifacts to a workspace directory.
+Code & Build → Deploy & Release → Operate & Monitor → Document & Handoff — writing a
+runnable project plus all its CI/CD, DevOps, and documentation artifacts to a workspace
+directory.
 
 Highlights:
 
@@ -28,12 +29,12 @@ catalogue.
 
 | Character | Phase focus | Skills |
 |-----------|-------------|--------|
-| 🧭 **Product Manager** | Plan | `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics` |
+| 🧭 **Product Manager** | Plan + Document | `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics`, `write-user-manual` |
 | 🎨 **UI/UX Designer** | Plan | `map-user-flow`, `create-wireframe`, `specify-components`, `apply-usability-heuristics`, `ensure-accessibility` |
 | 🧠 **Tech Lead / Architect** | Plan + supervise | `select-tech-stack`, `design-architecture`, `define-api-spec`, `design-db-schema`, `write-adr`, `review-code`, `route-workflow` |
-| 💻 **Software Engineer** | Code + Operate | `scaffold-project`, `write-code`, `write-unit-tests`, `run-tests`, `fix-bug`, `manage-version-control` |
-| 🧪 **QA / SDET** | Plan + Deploy | `design-test-cases`, `analyze-edge-cases`, `write-e2e-tests`, `plan-performance-tests`, `execute-tests`, `inspect-project` |
-| 🚀 **DevOps / SRE** | Code + Deploy + Operate | `containerize-service`, `build-ci-pipeline`, `build-cd-pipeline`, `write-infrastructure-code`, `write-k8s-manifests`, `configure-observability`, `write-runbook` |
+| 💻 **Software Engineer** | Code + Operate + Document | `scaffold-project`, `write-code`, `write-unit-tests`, `run-tests`, `fix-bug`, `manage-version-control`, `write-readme` |
+| 🧪 **QA / SDET** | Plan + Deploy + Document | `design-test-cases`, `analyze-edge-cases`, `write-e2e-tests`, `plan-performance-tests`, `execute-tests`, `inspect-project`, `write-test-report` |
+| 🚀 **DevOps / SRE** | Code + Deploy + Operate + Document | `containerize-service`, `build-ci-pipeline`, `build-cd-pipeline`, `write-infrastructure-code`, `write-k8s-manifests`, `configure-observability`, `write-runbook`, `document-infrastructure` |
 
 Skills come in two kinds: **tool-backed** skills that perform real I/O (writing files,
 running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
@@ -80,7 +81,8 @@ Sources for the practices baked into the skill bodies:
 
 The Tech Lead acts as supervisor. Two feedback loops (review changes, failing tests)
 bounce work back to the engineer, each bounded by an iteration cap so the run always
-terminates.
+terminates. A final **Document & Handoff** phase then has each role write the
+documentation it knows best.
 
 ```text
 START → PM → UX → TechLead(design) → QA(plan) → SWE → TechLead(review)
@@ -94,11 +96,26 @@ START → PM → UX → TechLead(design) → QA(plan) → SWE → TechLead(revie
                           ┌──────── fail (cap) ─────────────┤
                           ▼                       pass       │
                     SWE(fix) → QA(run tests)                 ▼
-                                                     DevOps(CD) → Operate → END
+                                                     DevOps(CD) → Operate
+                                                                    │
+                                                                    ▼
+  END ← PM(user manual) ← DevOps(infra docs) ← QA(test report) ← SWE(README)
 ```
 
 Each character reads the shared **TeamState blackboard** (`src/software_team/state.py`)
 and contributes its artifacts.
+
+### Who documents what
+
+Documentation follows the principle *"whoever understands a part best writes it down"*,
+so the closing phase splits it by responsibility — the same way a real team does:
+
+| Question | Owner | Artifact |
+|----------|-------|----------|
+| **How** do I set up and run it? | 💻 Software Engineer | `README.md` (setup, run, API usage) |
+| Is it **tested**? | 🧪 QA / SDET | `docs/test_report.md` (coverage, results, residual risk) |
+| **Where & When** does it deploy / alert? | 🚀 DevOps / SRE | `docs/infrastructure.md` (pipelines, resources, rollout) + `docs/runbook.md` |
+| **Why & What** does it do for users? | 🧭 Product Manager | `docs/user_manual.md` + `docs/release_notes.md` |
 
 ## Quick start
 
@@ -149,6 +166,7 @@ the rest of the pipeline is identical. The intake logic lives in
 ### Output (`workspace/`)
 
 ```text
+README.md                # how to set up, run, and call the service (Software Engineer)
 app/                     # runnable FastAPI service (pure logic + thin web adapter)
 tests/                   # unit tests + E2E API tests (run automatically by QA)
 requirements.txt
@@ -158,7 +176,8 @@ terraform/main.tf        # IaC
 k8s/                     # deployment (+ readiness probe) and service
 monitoring/              # prometheus.yml, alerts.yml
 docs/                    # backlog, ux, architecture, openapi, schema, test plan,
-                         # runbook, operations report
+                         # runbook, operations report, and the handoff docs:
+                         # test_report, infrastructure, user_manual, release_notes
 ```
 
 ## Configuration

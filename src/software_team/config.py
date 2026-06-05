@@ -48,6 +48,11 @@ ROLE_TIERS: dict[str, str] = {
     "devops_ci": "narrative",
     "devops_cd": "narrative",
     "operate": "narrative",
+    # Document & Handoff — prose deliverables, so the narrative tier.
+    "software_engineer_readme": "narrative",
+    "qa_report": "narrative",
+    "devops_docs": "narrative",
+    "product_manager_docs": "narrative",
 }
 
 # Supported LLM backends. The default per-tier model for each, used unless overridden by

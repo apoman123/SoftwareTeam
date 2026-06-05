@@ -11,7 +11,7 @@ from __future__ import annotations
 from .. import ui
 from ..skills.common import filesystem
 from ..state import TeamState
-from .base import emit_files, output_dir, relpath
+from .base import emit_files, generate, output_dir, relpath, with_skills
 
 ROLE = "devops_sre"
 
@@ -29,6 +29,13 @@ OPERATE_SYSTEM = """You are an SRE setting up observability. Produce Prometheus 
 config (monitoring/prometheus.yml), alert rules for error-rate and latency
 (monitoring/alerts.yml), and an on-call runbook with disaster-recovery steps
 (docs/runbook.md). Emit files as <<<FILE path >>> ... <<<END>>> blocks, no fences."""
+
+DOCS_SYSTEM = """You are a DevOps/SRE engineer documenting the infrastructure for on-call
+and platform engineers. Explain where and how the service is deployed: what each CI and
+CD stage does, the container image, the Terraform-managed cloud resources, the Kubernetes
+Deployment and Service, the required environment variables and where they are stored
+(never secrets in git), and the rollout/rollback strategy. Output GitHub-flavoured
+markdown only (no file blocks)."""
 
 
 def devops_ci_node(state: TeamState) -> TeamState:
@@ -143,3 +150,36 @@ def operate_node(state: TeamState) -> TeamState:
         "ops_report": ops_report,
         "current_phase": "operate",
     }
+
+
+def devops_docs_node(state: TeamState) -> TeamState:
+    """Document the infrastructure: pipelines, cloud resources, config, and rollout strategy."""
+    ui.announce(
+        ROLE,
+        "document",
+        "Documenting infrastructure, pipelines and deployment",
+        ["document-infrastructure"],
+    )
+    user = (
+        "Document the infrastructure and deployment for this service. Cover the CI and CD "
+        "pipelines, the container image, the Terraform resources, the Kubernetes manifests, "
+        "the required environment variables and where they live, and the rollout/rollback "
+        "strategy.\n\n"
+        f"### CI workflow\n{state.get('ci_config', '')}\n\n"
+        f"### CD workflow\n{state.get('cd_config', '')}\n\n"
+        f"### Dockerfile\n{state.get('dockerfile', '')}\n\n"
+        f"### Terraform\n{state.get('iac', '')}\n\n"
+        f"### Kubernetes\n{state.get('k8s', '')}\n"
+    )
+    doc = generate(
+        "devops_docs",
+        with_skills(DOCS_SYSTEM, ROLE),
+        user,
+        state,
+        research_queries=[
+            "latest infrastructure documentation and deployment runbook best practices 2026",
+        ],
+    )
+    path = filesystem.write_doc(output_dir(state), "infrastructure.md", doc)
+    ui.written(relpath(state, [path]))
+    return {"infrastructure_docs": doc, "current_phase": "document"}

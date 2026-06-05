@@ -27,6 +27,11 @@ Emit each test file as:
 <contents>
 <<<END>>>"""
 
+REPORT_SYSTEM = """You are a QA Engineer / SDET writing the test report. Summarise the
+coverage (which test cases map to which user stories, unit vs end-to-end), the result of
+the latest run (pass/fail and how to reproduce it), and the residual risks or gaps. Be
+honest about what is untested. Output markdown only."""
+
 
 def qa_planning_node(state: TeamState) -> TeamState:
     """Derive a traceable test plan (cases, edge cases, perf sketch) from acceptance criteria."""
@@ -95,3 +100,28 @@ def qa_test_node(state: TeamState) -> TeamState:
         "tests_passed": passed,
         "current_phase": "deploy",
     }
+
+
+def qa_report_node(state: TeamState) -> TeamState:
+    """Compile the test report: coverage, the latest run's result, and residual risk."""
+    ui.announce(ROLE, "document", "Compiling the test report", ["write-test-report"])
+    test_files = "\n".join(path for path in sorted(state.get("source_files", {})) if "test" in path)
+    user = (
+        "Write the test report for this project.\n\n"
+        f"### Test plan\n{state.get('test_plan', '')}\n\n"
+        f"### Test files\n{test_files}\n\n"
+        f"### Latest run result (tests_passed={state.get('tests_passed', False)})\n"
+        f"{state.get('test_results', '')}\n"
+    )
+    doc = generate(
+        "qa_report",
+        with_skills(REPORT_SYSTEM, ROLE),
+        user,
+        state,
+        research_queries=[
+            "latest software test reporting and coverage best practices 2026",
+        ],
+    )
+    path = filesystem.write_doc(output_dir(state), "test_report.md", doc)
+    ui.written(relpath(state, [path]))
+    return {"test_report": doc, "current_phase": "document"}

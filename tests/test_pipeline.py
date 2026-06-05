@@ -34,6 +34,12 @@ def test_full_pipeline_dry_run(tmp_path):
         "monitoring/prometheus.yml",
         "docs/runbook.md",
         "docs/operations_report.md",
+        # Document & Handoff phase — one deliverable per responsible role.
+        "README.md",
+        "docs/test_report.md",
+        "docs/infrastructure.md",
+        "docs/user_manual.md",
+        "docs/release_notes.md",
     ]
     for rel in expected:
         assert (tmp_path / rel).exists(), f"missing artifact: {rel}"

@@ -3,7 +3,12 @@
 import pytest
 
 from software_team.skills.common import filesystem
-from software_team.skills.common.authoring import extract_fenced, file_blocks, parse_file_blocks
+from software_team.skills.common.authoring import (
+    extract_fenced,
+    file_blocks,
+    parse_file_blocks,
+    split_at_heading,
+)
 
 
 def test_file_block_roundtrip():
@@ -16,6 +21,21 @@ def test_extract_fenced_by_language():
     text = "intro\n```yaml\nkey: value\n```\nmid\n```sql\nSELECT 1;\n```\n"
     assert extract_fenced(text, "yaml") == "key: value"
     assert extract_fenced(text, "sql") == "SELECT 1;"
+
+
+def test_split_at_heading_keeps_subheadings_in_trailing_section():
+    text = "# Manual\n\nUse it like so.\n\n## Release Notes\n\n### Added\n- a feature\n"
+    manual, notes = split_at_heading(text, "Release Notes")
+    assert manual == "# Manual\n\nUse it like so."
+    # The trailing section keeps its own sub-headings (unlike extract_section).
+    assert notes.startswith("## Release Notes")
+    assert "### Added" in notes
+
+
+def test_split_at_heading_without_heading_returns_whole_text():
+    manual, notes = split_at_heading("# Manual\n\nNo notes here.", "Release Notes")
+    assert manual == "# Manual\n\nNo notes here."
+    assert notes == ""
 
 
 def test_write_files_creates_tree(tmp_path):

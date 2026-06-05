@@ -9,9 +9,10 @@ workspace.
 from __future__ import annotations
 
 from .. import ui
+from ..skills.common import filesystem
 from ..skills.registry import skill_names
 from ..state import TeamState
-from .base import emit_files
+from .base import emit_files, generate, output_dir, relpath, with_skills
 
 ROLE = "software_engineer"
 
@@ -29,6 +30,13 @@ to unit test, and put the web framework in a thin adapter. Include a requirement
 FIX_SYSTEM = f"""You are a Software Engineer fixing failing tests. Read the pytest
 output, find the root cause, and re-emit ONLY the files you change with corrected
 contents. {FILE_PROTOCOL}"""
+
+README_SYSTEM = """You are a Software Engineer writing the repository README — the
+project's front door for other engineers and users. Explain what the project does, the
+prerequisites and versions, how to set it up locally (create a virtual environment, then
+install the pinned dependencies from requirements.txt), how to run it, and how to call
+its API with copy-pasteable examples. Output GitHub-flavoured markdown only (no file
+blocks)."""
 
 
 def _stack_hint(state: TeamState) -> str:
@@ -105,3 +113,32 @@ def software_engineer_fix_node(state: TeamState) -> TeamState:
         ],
     )
     return {"source_files": files, "fix_iters": iters, "current_phase": "deploy"}
+
+
+def software_engineer_readme_node(state: TeamState) -> TeamState:
+    """Write the repository README: purpose, local setup, run instructions, and API usage."""
+    ui.announce(ROLE, "document", "Writing the repository README", ["write-readme"])
+    files = state.get("source_files", {})
+    listing = "\n".join(sorted(files))
+    user = (
+        "Write the repository README.md for the project below. Include, with concrete "
+        "commands: a short overview, prerequisites and versions, local setup (create a "
+        "virtual environment, then `pip install -r requirements.txt`), how to run it "
+        "(e.g. `uvicorn app.main:app --reload`), an API usage section with example "
+        "`curl` calls, and how to run the tests.\n\n"
+        f"### Architecture & API\n{state.get('architecture', '')}\n\n"
+        f"### Project files\n{listing}\n\n"
+        f"### Dependencies (requirements.txt)\n{files.get('requirements.txt', '')}\n"
+    )
+    doc = generate(
+        "software_engineer_readme",
+        with_skills(README_SYSTEM, ROLE),
+        user,
+        state,
+        research_queries=[
+            f"latest README conventions and {_stack_hint(state)} quickstart commands 2026",
+        ],
+    )
+    path = filesystem.write_file(output_dir(state), "README.md", doc)
+    ui.written(relpath(state, [path]))
+    return {"readme": doc, "current_phase": "document"}

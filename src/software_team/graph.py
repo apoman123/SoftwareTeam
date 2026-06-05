@@ -16,7 +16,15 @@ engineer, each bounded by an iteration cap so the graph always terminates.
                               ┌──────── fail (cap) ────────────────┤
                               ▼                          pass       │
                         SWE(fix) → QA(run tests)                    ▼
-                                                            DevOps(CD) → Operate → END
+                                                            DevOps(CD) → Operate
+                                                                           │
+                                                                           ▼
+            END ← PM(user manual) ← DevOps(infra docs) ← QA(test report) ← SWE(README)
+
+The final Document & Handoff phase has each role write the documentation it knows best:
+the engineer the README (how to run it), QA the test report, DevOps the infrastructure
+docs (where it deploys), and the PM the user manual + release notes (what it does, for
+end users).
 """
 
 from __future__ import annotations
@@ -24,10 +32,19 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from .agents.devops_sre import devops_cd_node, devops_ci_node, operate_node
-from .agents.product_manager import product_manager_node
-from .agents.qa_engineer import qa_planning_node, qa_test_node
-from .agents.software_engineer import software_engineer_fix_node, software_engineer_node
+from .agents.devops_sre import (
+    devops_cd_node,
+    devops_ci_node,
+    devops_docs_node,
+    operate_node,
+)
+from .agents.product_manager import product_manager_docs_node, product_manager_node
+from .agents.qa_engineer import qa_planning_node, qa_report_node, qa_test_node
+from .agents.software_engineer import (
+    software_engineer_fix_node,
+    software_engineer_node,
+    software_engineer_readme_node,
+)
 from .agents.tech_lead import (
     route_after_review,
     route_after_tests,
@@ -57,6 +74,11 @@ def build_graph() -> CompiledStateGraph:
     builder.add_node("devops_cd", devops_cd_node)
     # Operate & Monitor
     builder.add_node("operate", operate_node)
+    # Document & Handoff
+    builder.add_node("software_engineer_readme", software_engineer_readme_node)
+    builder.add_node("qa_report", qa_report_node)
+    builder.add_node("devops_docs", devops_docs_node)
+    builder.add_node("product_manager_docs", product_manager_docs_node)
 
     builder.add_edge(START, "product_manager")
     builder.add_edge("product_manager", "ux_designer")
@@ -78,6 +100,12 @@ def build_graph() -> CompiledStateGraph:
     )
     builder.add_edge("software_engineer_fix", "qa_test")
     builder.add_edge("devops_cd", "operate")
-    builder.add_edge("operate", END)
+
+    # Document & Handoff: each role documents the part it knows best.
+    builder.add_edge("operate", "software_engineer_readme")
+    builder.add_edge("software_engineer_readme", "qa_report")
+    builder.add_edge("qa_report", "devops_docs")
+    builder.add_edge("devops_docs", "product_manager_docs")
+    builder.add_edge("product_manager_docs", END)
 
     return builder.compile()

@@ -21,6 +21,7 @@ PHASE_LABELS = {
     "code": "Code & Build",
     "deploy": "Deploy & Release",
     "operate": "Operate & Monitor",
+    "document": "Document & Handoff",
 }
 
 

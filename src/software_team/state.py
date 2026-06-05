@@ -76,6 +76,13 @@ class TeamState(TypedDict, total=False):
     incidents: str
     ops_report: str
 
+    # --- Document & Handoff ---
+    readme: str
+    user_manual: str
+    release_notes: str
+    infrastructure_docs: str
+    test_report: str
+
     # --- Control / bookkeeping ---
     current_phase: str
     review_iters: int

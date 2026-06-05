@@ -51,3 +51,26 @@ def extract_section(text: str, heading: str) -> str | None:
     )
     match = pattern.search(text or "")
     return match.group("body").strip() if match else None
+
+
+def split_at_heading(text: str, heading: str) -> tuple[str, str]:
+    """Split markdown at a `## heading`, peeling a trailing section into its own piece.
+
+    Unlike :func:`extract_section`, this keeps everything from the heading to the end of
+    the document (including any sub-headings such as ``### Added``), which is what a
+    standalone trailing section like Release Notes needs.
+
+    Args:
+        text: The markdown document to split.
+        heading: The heading text to split on (matched case-insensitively).
+
+    Returns:
+        A ``(before, section)`` pair: the text before the heading and the heading plus
+        everything after it. When the heading is absent, ``section`` is empty and
+        ``before`` is the whole document.
+    """
+    pattern = re.compile(rf"^#{{1,6}}\s*{re.escape(heading)}\s*$", re.MULTILINE | re.IGNORECASE)
+    match = pattern.search(text or "")
+    if not match:
+        return (text or "").strip(), ""
+    return text[: match.start()].strip(), text[match.start() :].strip()
