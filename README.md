@@ -18,6 +18,9 @@ Highlights:
 - **Grounded in current facts.** Every character can search the web for what it needs —
   current library APIs, today's stable versions, fresh best practices — and fold the
   findings into its work.
+- **Builds new or extends existing.** `run` builds a project from scratch; `feature`
+  integrates a new request into software the team already developed, re-running the whole
+  lifecycle so the change is reviewed, regression-tested, redeployed, and documented.
 - **Runs offline.** A `--dry-run` mode produces a complete, test-passing example with no
   model server, provider package, or network at all.
 
@@ -236,6 +239,11 @@ uv run software-team run --spec examples/sample_spec.md
 # Or skip the file and just tell the PM what to build with a prompt:
 uv run software-team run --prompt "Build a URL shortener with click analytics" --dry-run
 
+# Add a feature to software the team already built (brownfield/incremental mode):
+uv run software-team feature --into workspace --prompt "Add task priorities" --dry-run
+#   …or from a spec file, writing the updated copy elsewhere (leaving the original intact):
+uv run software-team feature --into workspace --spec examples/feature_priority.md --out workspace2
+
 # Other backends (set SWTEAM_LLM_PROVIDER, install the matching extra):
 #   uv sync --extra openai     && SWTEAM_LLM_PROVIDER=openai     OPENAI_API_KEY=...     uv run software-team run -s examples/sample_spec.md
 #   uv sync --extra anthropic  && SWTEAM_LLM_PROVIDER=anthropic  ANTHROPIC_API_KEY=...  uv run software-team run -s examples/sample_spec.md
@@ -266,6 +274,31 @@ There are two ways to tell the Product Manager what to build; provide exactly on
 Either way the request becomes the same `spec_text` the PM turns into requirements, so
 the rest of the pipeline is identical. The intake logic lives in
 `src/software_team/intake.py`.
+
+### Building new vs. extending existing software
+
+There are two commands, and both accept the same `--spec`/`--prompt` input:
+
+- **`run`** — greenfield. Build a brand-new project from the request.
+- **`feature`** — brownfield/incremental. Integrate the request as a **new feature into a
+  project the team has already developed**. Point `--into` at a previous run's workspace;
+  the loader (`src/software_team/project.py`) reads the existing code and docs, seeds them
+  into the run, and grounds every phase in what already exists, so the team *extends* the
+  software instead of rewriting it. The whole SDLC re-runs (so the change is reviewed,
+  tested for regressions, re-deployed, and the docs are refreshed).
+
+```bash
+# Modify the project in place:
+uv run software-team feature --into workspace --prompt "Add task priorities"
+
+# Or write the updated project to a new directory, leaving the original untouched:
+uv run software-team feature --into workspace --spec examples/feature_priority.md --out workspace2
+```
+
+In `--dry-run`, the feature command deterministically adds a `priority` field (and a
+`POST /tasks/{id}/priority` endpoint) to the demo Task API, with the original tests still
+passing — a self-contained demonstration of integrating a feature without breaking what
+exists.
 
 ### Output (`workspace/`)
 
@@ -340,7 +373,8 @@ Copy `.env.example` and adjust. Key variables:
 src/software_team/
   config.py      # LLM provider, per-role model tiers, web search, paths, loop caps
   intake.py      # resolve the feature request from a --spec file or a --prompt
-  state.py       # TeamState blackboard
+  project.py     # load already-developed software for an incremental `feature` run
+  state.py       # TeamState blackboard (build vs. feature mode)
   llm.py         # multi-provider chat-model factory (ollama/openai/anthropic/google/llama_cpp) + dry-run stub
   dryrun.py      # canned artifacts for --dry-run
   ui.py          # console reporting
@@ -348,8 +382,8 @@ src/software_team/
   agents/        # the six characters (one file each) + shared node helpers
   graph.py       # LangGraph StateGraph wiring the phases + loops
   main.py        # Typer CLI
-tests/           # framework tests (routers, skills, full dry-run pipeline)
-examples/        # sample_spec.md
+tests/           # framework tests (routers, skills, full dry-run pipeline, feature mode)
+examples/        # sample_spec.md (greenfield), feature_priority.md (incremental)
 scripts/setup.sh
 ```
 

@@ -11,8 +11,8 @@ from __future__ import annotations
 from .. import ui
 from ..skills.common import filesystem
 from ..skills.registry import skill_names
-from ..state import TeamState
-from .base import emit_files, generate, output_dir, relpath, with_skills
+from ..state import FEATURE_MODE, TeamState
+from .base import emit_files, feature_brief, generate, output_dir, relpath, with_skills
 
 ROLE = "software_engineer"
 
@@ -37,6 +37,11 @@ prerequisites and versions, how to set it up locally (create a virtual environme
 install the pinned dependencies from requirements.txt), how to run it, and how to call
 its API with copy-pasteable examples. Output GitHub-flavoured markdown only (no file
 blocks)."""
+
+
+def _code_listing(files: dict[str, str]) -> str:
+    """Render the current project files as fenced blocks for an edit/fix prompt."""
+    return "\n\n".join(f"# {path}\n```\n{content}\n```" for path, content in files.items())
 
 
 def _stack_hint(state: TeamState) -> str:
@@ -72,8 +77,16 @@ def software_engineer_node(state: TeamState) -> TeamState:
         f"### Acceptance Criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"{FILE_PROTOCOL}"
     )
+    if state.get("mode") == FEATURE_MODE:
+        # Extending existing software: show the current code and re-emit only what changes.
+        user += (
+            "\n\nThis is an existing codebase. Re-emit ONLY the files you change to add the "
+            "feature, plus any new files; do not touch unrelated files.\n\n"
+            f"### Current source files\n{_code_listing(state.get('source_files', {}))}"
+        )
     if state.get("review_status") == "changes" and state.get("review_notes"):
         user += f"\n\n### Address this review feedback\n{state['review_notes']}"
+    user += feature_brief(state)
 
     files = emit_files(
         state,
@@ -93,13 +106,10 @@ def software_engineer_fix_node(state: TeamState) -> TeamState:
     ui.announce(
         ROLE, "deploy", f"Fixing failing tests (hotfix pass {iters})", ["fix-bug", "run-tests"]
     )
-    listing = "\n\n".join(
-        f"# {path}\n```\n{content}\n```" for path, content in state.get("source_files", {}).items()
-    )
     user = (
         "The test suite failed. Fix the code.\n\n"
         f"### pytest output\n{state.get('test_results', '')}\n\n"
-        f"### Current files\n{listing}\n\n"
+        f"### Current files\n{_code_listing(state.get('source_files', {}))}\n\n"
         f"{FILE_PROTOCOL}"
     )
     files = emit_files(
@@ -129,7 +139,7 @@ def software_engineer_readme_node(state: TeamState) -> TeamState:
         f"### Architecture & API\n{state.get('architecture', '')}\n\n"
         f"### Project files\n{listing}\n\n"
         f"### Dependencies (requirements.txt)\n{files.get('requirements.txt', '')}\n"
-    )
+    ) + feature_brief(state)
     doc = generate(
         "software_engineer_readme",
         with_skills(README_SYSTEM, ROLE),

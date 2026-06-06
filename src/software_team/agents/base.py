@@ -19,7 +19,7 @@ from ..llm import build_llm
 from ..skills.common import filesystem, search
 from ..skills.common.authoring import parse_file_blocks
 from ..skills.registry import guidance_for
-from ..state import TeamState
+from ..state import FEATURE_MODE, TeamState
 
 
 def with_skills(persona: str, character: str) -> str:
@@ -36,6 +36,31 @@ def with_skills(persona: str, character: str) -> str:
     if not guidance:
         return persona
     return f"{persona}\n\nApply these skills and the technique behind each:\n{guidance}"
+
+
+def feature_brief(state: TeamState) -> str:
+    """Return the existing-software context block for an incremental feature run.
+
+    In ``build`` mode (the default) this is empty, so every node behaves exactly as it
+    does for a greenfield run. In ``feature`` mode it returns the rendered baseline digest
+    of the already-developed software plus the instruction to integrate the requested
+    feature into it — extend and modify what exists rather than rebuild the project. Nodes
+    append it to their user prompt so the framing is consistent across the whole team.
+
+    Args:
+        state: The shared team state (carries the mode and the rendered baseline).
+
+    Returns:
+        The context block to append to a node's prompt, or "" in build mode.
+    """
+    if state.get("mode") != FEATURE_MODE:
+        return ""
+    return (
+        "\n\nThe software below already exists and is in production. Treat the request "
+        "above as a NEW feature to integrate into it: build on what is there, change only "
+        "what the feature needs, preserve existing behaviour and unchanged files, and do "
+        "not rebuild the project from scratch.\n\n" + state.get("baseline", "")
+    )
 
 
 def research(state: TeamState, queries: list[str]) -> str:

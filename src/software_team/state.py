@@ -12,6 +12,17 @@ from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
 
+# How a run is framed. ``build`` is the default greenfield mode (turn a spec into a brand
+# new project); ``feature`` is the brownfield/incremental mode (integrate a new feature
+# into software the team has already developed). See ``new_feature_state``.
+BUILD_MODE = "build"
+FEATURE_MODE = "feature"
+
+# Header that marks the existing-software context block in a feature-mode prompt. It is a
+# stable sentinel: ``agents.base.feature_brief`` emits it and the dry-run stub keys off it
+# to return the incremental-feature variant of its canned output.
+FEATURE_BRIEF_HEADER = "## Existing software you are extending (incremental feature mode)"
+
 
 def _merge_dict(left: dict[str, str], right: dict[str, str]) -> dict[str, str]:
     """Reducer that merges file maps so multiple SWE passes accumulate files."""
@@ -32,6 +43,8 @@ class TeamState(TypedDict, total=False):
     spec_text: str
     output_dir: str
     dry_run: bool
+    mode: str  # BUILD_MODE (greenfield) or FEATURE_MODE (extend existing software)
+    baseline: str  # feature mode only: rendered digest of the existing software
 
     # --- Product Manager ---
     user_stories: str
@@ -96,11 +109,12 @@ class TeamState(TypedDict, total=False):
 
 
 def new_state(spec_path: str, spec_text: str, output_dir: str) -> TeamState:
-    """Build the initial state for a run."""
+    """Build the initial state for a greenfield (``build``) run."""
     return {
         "spec_path": spec_path,
         "spec_text": spec_text,
         "output_dir": output_dir,
+        "mode": BUILD_MODE,
         "source_files": {},
         "review_iters": 0,
         "fix_iters": 0,
@@ -109,3 +123,40 @@ def new_state(spec_path: str, spec_text: str, output_dir: str) -> TeamState:
         "messages": [],
         "current_phase": "plan",
     }
+
+
+def new_feature_state(
+    spec_path: str,
+    spec_text: str,
+    output_dir: str,
+    *,
+    source_files: dict[str, str],
+    baseline: str,
+) -> TeamState:
+    """Build the initial state for an incremental (``feature``) run.
+
+    Same shape as :func:`new_state`, but framed for extending software the team has
+    already developed: the run is put in :data:`FEATURE_MODE`, the existing source files
+    are pre-seeded so each phase modifies them in place (the ``source_files`` reducer
+    merges later edits on top), and a rendered ``baseline`` digest of the existing
+    project is carried so every node can ground its work in what already exists.
+
+    Args:
+        spec_path: Human-readable label for the new feature request (file path or
+            ``<prompt>``).
+        spec_text: The new feature description the team must integrate.
+        output_dir: Workspace the updated project is written to.
+        source_files: The existing project's code/config files (path -> content),
+            pre-seeded so unchanged files are preserved and edits accumulate.
+        baseline: A rendered digest of the existing software (file tree + key docs) for
+            grounding every phase.
+
+    Returns:
+        The initial team state for a feature run.
+    """
+    state = new_state(spec_path, spec_text, output_dir)
+    state["mode"] = FEATURE_MODE
+    state["source_files"] = dict(source_files)
+    state["baseline"] = baseline
+    state["current_phase"] = "feature"
+    return state

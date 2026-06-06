@@ -16,7 +16,7 @@ from ..config import SETTINGS
 from ..skills.common import filesystem
 from ..skills.common.authoring import extract_fenced, extract_section
 from ..state import TeamState
-from .base import generate, output_dir, relpath, with_skills
+from .base import feature_brief, generate, output_dir, relpath, with_skills
 
 ROLE = "tech_lead"
 
@@ -46,7 +46,7 @@ def tech_lead_design_node(state: TeamState) -> TeamState:
         f"### UX\n{state.get('ux_design', '')}\n\n"
         "Produce markdown with: ## Tech Stack, ## Architecture (mermaid), "
         "## API Specification (```yaml OpenAPI), ## Data Schema (```sql)."
-    )
+    ) + feature_brief(state)
     doc = generate(
         "tech_lead_design",
         with_skills(DESIGN_SYSTEM, ROLE),
@@ -87,7 +87,7 @@ def tech_lead_review_node(state: TeamState) -> TeamState:
         "Review this code against the requirements and acceptance criteria.\n\n"
         f"### Acceptance Criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"### Code\n{listing}\n"
-    )
+    ) + feature_brief(state)
     verdict = generate(
         "tech_lead_review",
         with_skills(REVIEW_SYSTEM, ROLE),

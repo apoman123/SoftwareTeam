@@ -11,7 +11,7 @@ from .. import ui
 from ..skills.common import filesystem, shell
 from ..skills.registry import skill_names
 from ..state import TeamState
-from .base import emit_files, generate, output_dir, relpath, with_skills
+from .base import emit_files, feature_brief, generate, output_dir, relpath, with_skills
 
 ROLE = "qa_engineer"
 
@@ -45,7 +45,7 @@ def qa_planning_node(state: TeamState) -> TeamState:
         "Derive a test plan from these acceptance criteria.\n\n"
         f"{state.get('acceptance_criteria', '')}\n\n"
         "Sections: ## Test Cases, ## Edge Cases, ## Performance / Load (sketch)."
-    )
+    ) + feature_brief(state)
     doc = generate(
         "qa_planning",
         with_skills(PLAN_SYSTEM, ROLE),
@@ -76,7 +76,7 @@ def qa_test_node(state: TeamState) -> TeamState:
         "Write end-to-end tests for this project.\n\n"
         f"### Test plan\n{state.get('test_plan', '')}\n\n"
         f"### Files in the project\n{listing}\n"
-    )
+    ) + feature_brief(state)
     e2e_files = emit_files(
         state,
         model_role=ROLE,
@@ -112,7 +112,7 @@ def qa_report_node(state: TeamState) -> TeamState:
         f"### Test files\n{test_files}\n\n"
         f"### Latest run result (tests_passed={state.get('tests_passed', False)})\n"
         f"{state.get('test_results', '')}\n"
-    )
+    ) + feature_brief(state)
     doc = generate(
         "qa_report",
         with_skills(REPORT_SYSTEM, ROLE),

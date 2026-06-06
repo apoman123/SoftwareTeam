@@ -13,7 +13,7 @@ from .. import ui
 from ..skills.common import design_system, filesystem
 from ..skills.registry import skill_names
 from ..state import TeamState
-from .base import generate, output_dir, relpath, with_skills
+from .base import feature_brief, generate, output_dir, relpath, with_skills
 
 ROLE = "ux_designer"
 
@@ -83,7 +83,7 @@ def ux_designer_node(state: TeamState) -> TeamState:
         f"{system_md}\n\n"
         "Produce markdown with:\n## User Flow (numbered)\n"
         "## Wireframe (ASCII inside a code block)\n## Component / State Notes\n"
-    )
+    ) + feature_brief(state)
     doc = generate(
         ROLE,
         with_skills(SYSTEM, ROLE),

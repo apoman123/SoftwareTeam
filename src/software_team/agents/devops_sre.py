@@ -11,7 +11,7 @@ from __future__ import annotations
 from .. import ui
 from ..skills.common import filesystem, security
 from ..state import TeamState
-from .base import emit_files, generate, output_dir, relpath, with_skills
+from .base import emit_files, feature_brief, generate, output_dir, relpath, with_skills
 
 ROLE = "devops_sre"
 
@@ -84,7 +84,8 @@ def devops_ci_node(state: TeamState) -> TeamState:
             "Containerise this Python service and set up CI with GitLab integrated with "
             "Jenkins. The app runs with `uvicorn app.main:app`. Provide Dockerfile, "
             "a .gitlab-ci.yml that lints and tests then triggers Jenkins, and a Jenkinsfile."
-        ),
+        )
+        + feature_brief(state),
         research_queries=[
             "latest GitLab CI/CD .gitlab-ci.yml syntax and stages 2026",
             "latest Jenkins declarative pipeline Jenkinsfile best practices 2026",
@@ -127,7 +128,8 @@ def devops_cd_node(state: TeamState) -> TeamState:
             "to the GitLab pipeline that triggers the Jenkins deploy job with a safe rollout "
             "(canary or blue-green) and rollback, plus Terraform and Kubernetes manifests "
             "(deployment with readiness probe, service)."
-        ),
+        )
+        + feature_brief(state),
         research_queries=[
             "latest GitLab CI manual deploy stage and environments 2026",
             "Jenkins declarative pipeline canary blue-green deploy with rollback 2026",
@@ -162,7 +164,8 @@ def operate_node(state: TeamState) -> TeamState:
         user_prompt=(
             "Set up observability for the deployed Task API: Prometheus config, alert rules "
             "(error rate, latency), and an on-call runbook with DR steps."
-        ),
+        )
+        + feature_brief(state),
         research_queries=[
             "latest Prometheus scrape config and alerting rule syntax 2026",
         ],
@@ -228,7 +231,7 @@ def devops_docs_node(state: TeamState) -> TeamState:
         f"### Dockerfile\n{state.get('dockerfile', '')}\n\n"
         f"### Terraform\n{state.get('iac', '')}\n\n"
         f"### Kubernetes\n{state.get('k8s', '')}\n"
-    )
+    ) + feature_brief(state)
     doc = generate(
         "devops_docs",
         with_skills(DOCS_SYSTEM, ROLE),

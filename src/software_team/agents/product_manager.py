@@ -12,7 +12,7 @@ from ..skills.common import filesystem
 from ..skills.common.authoring import extract_section, split_at_heading
 from ..skills.registry import skill_names
 from ..state import TeamState
-from .base import generate, output_dir, relpath, with_skills
+from .base import feature_brief, generate, output_dir, relpath, with_skills
 
 ROLE = "product_manager"
 
@@ -45,7 +45,7 @@ def product_manager_node(state: TeamState) -> TeamState:
         "## Goal\n## User Stories (US-n, story format)\n"
         "## Acceptance Criteria (Gherkin) with a ```gherkin block\n"
         "## Prioritised Backlog (MoSCoW)\n"
-    )
+    ) + feature_brief(state)
     doc = generate(
         ROLE,
         with_skills(SYSTEM, ROLE),
@@ -82,7 +82,7 @@ def product_manager_docs_node(state: TeamState) -> TeamState:
         f"### User stories\n{state.get('user_stories', '')}\n\n"
         f"### Acceptance criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"### API surface\n{state.get('api_spec', '')}\n"
-    )
+    ) + feature_brief(state)
     doc = generate(
         "product_manager_docs",
         with_skills(DOCS_SYSTEM, ROLE),

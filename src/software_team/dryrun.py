@@ -9,6 +9,7 @@ isn't present). Live mode replaces all of this with actual model generations.
 from __future__ import annotations
 
 from .skills.common.authoring import file_blocks
+from .state import FEATURE_BRIEF_HEADER
 
 # --------------------------------------------------------------------------- #
 # Generated application source (Task API)
@@ -191,6 +192,212 @@ SWE_FILES = {
     "tests/__init__.py": "",
     "tests/test_service.py": _UNIT_TESTS,
     "requirements.txt": _REQUIREMENTS,
+}
+
+# --------------------------------------------------------------------------- #
+# Incremental feature (dry-run): "add task priority"
+#
+# Demonstrates `software-team feature` deterministically: the engineer re-emits the two
+# files it changes (service + web layer) and adds one new test file, extending the Task API
+# with a priority field + a `POST /tasks/{id}/priority` endpoint. The new fields default,
+# so the original unit and E2E tests still pass — i.e. the feature is integrated, not
+# bolted on. Live mode replaces this with a real generation for the requested feature.
+# --------------------------------------------------------------------------- #
+
+_FEATURE_SERVICE_PY = '''\
+"""In-memory Task service: pure business logic, no web framework required."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from itertools import count
+
+# Allowed task priorities, lowest to highest.
+PRIORITIES = ("low", "medium", "high")
+
+
+class TaskError(Exception):
+    """Invalid task operation (e.g. bad input)."""
+
+
+class TaskNotFound(TaskError):
+    """Requested task does not exist."""
+
+
+@dataclass
+class Task:
+    id: int
+    title: str
+    done: bool = False
+    priority: str = "medium"
+
+
+class TaskService:
+    def __init__(self) -> None:
+        self._tasks: dict[int, Task] = {}
+        self._ids = count(1)
+
+    def create(self, title: str, priority: str = "medium") -> Task:
+        title = (title or "").strip()
+        if not title:
+            raise TaskError("title must not be empty")
+        priority = self._validate_priority(priority)
+        task = Task(id=next(self._ids), title=title, priority=priority)
+        self._tasks[task.id] = task
+        return task
+
+    def list(self) -> list[Task]:
+        return list(self._tasks.values())
+
+    def get(self, task_id: int) -> Task:
+        if task_id not in self._tasks:
+            raise TaskNotFound(f"task {task_id} not found")
+        return self._tasks[task_id]
+
+    def complete(self, task_id: int) -> Task:
+        task = self.get(task_id)
+        task.done = True
+        return task
+
+    def set_priority(self, task_id: int, priority: str) -> Task:
+        task = self.get(task_id)
+        task.priority = self._validate_priority(priority)
+        return task
+
+    def delete(self, task_id: int) -> None:
+        self.get(task_id)
+        del self._tasks[task_id]
+
+    @staticmethod
+    def _validate_priority(priority: str) -> str:
+        priority = (priority or "").strip().lower()
+        if priority not in PRIORITIES:
+            raise TaskError(f"priority must be one of {PRIORITIES}")
+        return priority
+'''
+
+_FEATURE_MAIN_PY = '''\
+"""FastAPI wiring over the pure TaskService."""
+from __future__ import annotations
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+from .service import TaskError, TaskNotFound, TaskService
+
+app = FastAPI(title="Task API", version="1.1.0")
+service = TaskService()
+
+
+class TaskIn(BaseModel):
+    title: str
+    priority: str = "medium"
+
+
+class PriorityIn(BaseModel):
+    priority: str
+
+
+class TaskOut(BaseModel):
+    id: int
+    title: str
+    done: bool
+    priority: str
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/tasks", response_model=TaskOut, status_code=201)
+def create_task(payload: TaskIn) -> TaskOut:
+    try:
+        task = service.create(payload.title, payload.priority)
+    except TaskError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return TaskOut(**task.__dict__)
+
+
+@app.get("/tasks", response_model=list[TaskOut])
+def list_tasks() -> list[TaskOut]:
+    return [TaskOut(**t.__dict__) for t in service.list()]
+
+
+@app.get("/tasks/{task_id}", response_model=TaskOut)
+def get_task(task_id: int) -> TaskOut:
+    try:
+        task = service.get(task_id)
+    except TaskNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return TaskOut(**task.__dict__)
+
+
+@app.post("/tasks/{task_id}/complete", response_model=TaskOut)
+def complete_task(task_id: int) -> TaskOut:
+    try:
+        task = service.complete(task_id)
+    except TaskNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return TaskOut(**task.__dict__)
+
+
+@app.post("/tasks/{task_id}/priority", response_model=TaskOut)
+def set_task_priority(task_id: int, payload: PriorityIn) -> TaskOut:
+    try:
+        task = service.set_priority(task_id, payload.priority)
+    except TaskNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except TaskError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return TaskOut(**task.__dict__)
+
+
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int) -> None:
+    try:
+        service.delete(task_id)
+    except TaskNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+'''
+
+_FEATURE_TESTS = '''\
+"""Unit tests for the task-priority feature."""
+import pytest
+
+from app.service import PRIORITIES, TaskError, TaskService
+
+
+def test_create_defaults_to_medium_priority():
+    svc = TaskService()
+    assert svc.create("write tests").priority == "medium"
+
+
+def test_create_with_explicit_priority():
+    svc = TaskService()
+    assert svc.create("ship it", "high").priority == "high"
+
+
+def test_set_priority_updates_task():
+    svc = TaskService()
+    task = svc.create("triage")
+    assert svc.set_priority(task.id, "low").priority == "low"
+
+
+def test_invalid_priority_rejected():
+    svc = TaskService()
+    task = svc.create("triage")
+    with pytest.raises(TaskError):
+        svc.set_priority(task.id, "urgent")
+
+
+def test_priorities_are_ordered_low_to_high():
+    assert PRIORITIES == ("low", "medium", "high")
+'''
+
+FEATURE_FILES = {
+    "app/service.py": _FEATURE_SERVICE_PY,
+    "app/main.py": _FEATURE_MAIN_PY,
+    "tests/test_priority.py": _FEATURE_TESTS,
 }
 
 # --------------------------------------------------------------------------- #
@@ -927,6 +1134,10 @@ def canned_response(role: str, prompt: str) -> str:
     if role == "qa_planning":
         return _QA_PLAN
     if role in ("software_engineer", "software_engineer_fix"):
+        # In a feature run the prompt carries the existing-software brief; re-emit only the
+        # files the feature changes so unchanged code is preserved by the merge reducer.
+        if FEATURE_BRIEF_HEADER in prompt:
+            return file_blocks(FEATURE_FILES)
         return file_blocks(SWE_FILES)
     if role == "qa_engineer":
         return file_blocks(QA_FILES)
