@@ -5,7 +5,7 @@ description: Finds the root cause of a failure and patches it minimally. Use whe
 
 # Fix the bug
 
-When tests fail, read the pytest output and find the **root cause** before changing code —
+When tests fail, read the test output and find the **root cause** before changing code —
 fix the cause, not the symptom.
 
 - Re-emit **only the files you change**.

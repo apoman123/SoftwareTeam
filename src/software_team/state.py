@@ -12,6 +12,8 @@ from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
 
+from . import triage
+
 # How a run is framed. ``build`` is the default greenfield mode (turn a spec into a brand
 # new project); ``feature`` is the brownfield/incremental mode (integrate a new feature
 # into software the team has already developed). See ``new_feature_state``.
@@ -46,14 +48,18 @@ class TeamState(TypedDict, total=False):
     mode: str  # BUILD_MODE (greenfield) or FEATURE_MODE (extend existing software)
     baseline: str  # feature mode only: rendered digest of the existing software
 
+    # --- Capability flags (set by deterministic triage; gate which phases run) ---
+    needs_frontend: bool  # build a UI? -> runs the UX designer + frontend engineer
+    needs_backend: bool  # build server-side code? -> runs the software engineer (backend)
+    needs_deployment: bool  # deploy it? -> runs containerisation, CI/CD, K8s, operate
+
     # --- Product Manager ---
     user_stories: str
     acceptance_criteria: str
     backlog: str
 
     # --- UI/UX Designer ---
-    design_system: str  # recommended pattern/style/colours/typography (design-system engine)
-    ux_design: str
+    ux_design: str  # written UI/UX description handed to the Tech Lead (no drawings)
 
     # --- Tech Lead / Architect ---
     architecture: str
@@ -115,6 +121,9 @@ def new_state(spec_path: str, spec_text: str, output_dir: str) -> TeamState:
         "spec_text": spec_text,
         "output_dir": output_dir,
         "mode": BUILD_MODE,
+        "needs_frontend": triage.needs_frontend(spec_text),
+        "needs_backend": triage.needs_backend(spec_text),
+        "needs_deployment": triage.needs_deployment(spec_text),
         "source_files": {},
         "review_iters": 0,
         "fix_iters": 0,

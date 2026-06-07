@@ -16,15 +16,21 @@ from ..config import SETTINGS
 from ..skills.common import filesystem
 from ..skills.common.authoring import extract_fenced, extract_section
 from ..state import TeamState
-from .base import feature_brief, generate, output_dir, relpath, with_skills
+from .base import feature_brief, generate, output_dir, relpath, stack_hint, with_skills
 
 ROLE = "tech_lead"
 
 DESIGN_SYSTEM = """You are a Senior Tech Lead / Architect. You make pragmatic technology
-choices and design for testability, scalability and operability. You produce an
-architecture overview (with a mermaid diagram), an OpenAPI 3 contract in a ```yaml
-block, and a SQL schema in a ```sql block. Prefer separating pure business logic from
-the web framework. Output markdown only."""
+choices and design for testability, scalability and operability. Honour any technology
+constraint the stakeholder states in the requirements — the programming language,
+framework, runtime, database or platform they ask for is binding; only when the
+requirements are silent do you choose the stack yourself and justify it. State the chosen
+stack explicitly under a '## Tech Stack' heading. You produce an architecture overview
+(with a mermaid diagram), an API contract (an OpenAPI 3 ```yaml block for an HTTP/REST API,
+or the equivalent interface definition for the chosen style), and the data schema in a
+fenced block (```sql for a relational database, or the equivalent for the chosen
+datastore). Prefer separating pure business logic from the delivery framework. Output
+markdown only."""
 
 REVIEW_SYSTEM = """You are a Senior Tech Lead doing code review. Judge correctness,
 separation of concerns, input validation, error handling and test coverage. Begin your
@@ -40,21 +46,33 @@ def tech_lead_design_node(state: TeamState) -> TeamState:
         "Selecting the stack and designing architecture, API contract and DB schema",
         ["select-tech-stack", "design-architecture", "define-api-spec", "design-db-schema"],
     )
+    requested = stack_hint(state)
+    constraint = (
+        "\n\nThe stakeholder explicitly asks for this technology — treat it as a binding "
+        f"constraint and design around it: {requested}."
+        if requested
+        else ""
+    )
     user = (
         "Design the system for these requirements and UX.\n\n"
-        f"### Requirements\n{state.get('user_stories', '')}\n\n"
-        f"### UX\n{state.get('ux_design', '')}\n\n"
+        "### Original requirements (honour any stack / language / platform constraint "
+        f"stated here)\n{state.get('spec_text', '')}\n\n"
+        f"### Requirements (user stories)\n{state.get('user_stories', '')}\n\n"
+        f"### UX\n{state.get('ux_design', '')}"
+        f"{constraint}\n\n"
         "Produce markdown with: ## Tech Stack, ## Architecture (mermaid), "
-        "## API Specification (```yaml OpenAPI), ## Data Schema (```sql)."
+        "## API Specification (```yaml OpenAPI for an HTTP API), ## Data Schema (```sql, or "
+        "the equivalent for the chosen datastore)."
     ) + feature_brief(state)
+    target = requested or "the most suitable backend language and web framework"
     doc = generate(
         "tech_lead_design",
         with_skills(DESIGN_SYSTEM, ROLE),
         user,
         state,
         research_queries=[
-            "latest stable Python web framework versions 2026",
-            "current FastAPI and OpenAPI 3 best practices 2026",
+            f"latest stable versions and best practices for {target} 2026",
+            "current REST API and OpenAPI 3 design best practices 2026",
         ],
     )
 
@@ -94,7 +112,8 @@ def tech_lead_review_node(state: TeamState) -> TeamState:
         user,
         state,
         research_queries=[
-            "latest Python security and code review best practices 2026",
+            f"latest {stack_hint(state) or 'software'} security and code review best "
+            "practices 2026",
         ],
     )
     status = "changes" if "review_status: changes" in verdict.lower() else "approve"
@@ -103,20 +122,52 @@ def tech_lead_review_node(state: TeamState) -> TeamState:
 
 
 # --- Supervisor routing (the `route_workflow` skill) ---
+#
+# Beyond the two feedback loops (review changes, failing tests), routing is capability-aware:
+# the deterministic ``needs_frontend`` / ``needs_deployment`` flags (set by ``triage``) let
+# the supervisor skip phases a project does not need — no UX/frontend for a pure API, and no
+# containerisation/CI-CD/operate/infra-docs for a library or CLI.
+
+
+def route_after_product_manager(state: TeamState) -> str:
+    """Design the UX first when the product has a UI, else go straight to architecture."""
+    return "ux_designer" if state.get("needs_frontend") else "tech_lead_design"
+
+
+def route_after_planning(state: TeamState) -> str:
+    """Build the backend when needed; else jump to the frontend, or straight to review.
+
+    Backend is the default. A purely frontend/static product (``needs_backend`` false) skips
+    the Software Engineer and goes straight to the Frontend Engineer (or, in the degenerate
+    case of neither, to review).
+    """
+    if state.get("needs_backend", True):
+        return "software_engineer"
+    return "frontend_engineer" if state.get("needs_frontend") else "tech_lead_review"
+
+
+def route_after_build(state: TeamState) -> str:
+    """Build the frontend after the backend when a UI is needed, else go to review."""
+    return "frontend_engineer" if state.get("needs_frontend") else "tech_lead_review"
 
 
 def route_after_review(state: TeamState) -> str:
-    """Loop back to the engineer for changes (within the cap), or advance to CI."""
+    """Loop back for changes (within the cap); else go to CI, or skip straight to testing."""
     if (
         state.get("review_status") == "changes"
         and state.get("review_iters", 0) < SETTINGS.max_review_iters
     ):
         return "software_engineer"
-    return "devops_ci"
+    return "devops_ci" if state.get("needs_deployment") else "qa_test"
 
 
 def route_after_tests(state: TeamState) -> str:
-    """Loop back to a bug-fix if tests fail (within the cap), or advance to CD."""
+    """Loop back to a bug-fix on failure (within the cap); else deploy, or skip to docs."""
     if not state.get("tests_passed", False) and state.get("fix_iters", 0) < SETTINGS.max_fix_iters:
         return "software_engineer_fix"
-    return "devops_cd"
+    return "devops_cd" if state.get("needs_deployment") else "software_engineer_readme"
+
+
+def route_after_qa_report(state: TeamState) -> str:
+    """Write infra docs when the project deploys, else go straight to the user manual."""
+    return "devops_docs" if state.get("needs_deployment") else "product_manager_docs"

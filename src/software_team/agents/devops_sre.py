@@ -11,7 +11,15 @@ from __future__ import annotations
 from .. import ui
 from ..skills.common import filesystem, security
 from ..state import TeamState
-from .base import emit_files, feature_brief, generate, output_dir, relpath, with_skills
+from .base import (
+    emit_files,
+    feature_brief,
+    generate,
+    output_dir,
+    relpath,
+    stack_hint,
+    with_skills,
+)
 
 ROLE = "devops_sre"
 
@@ -19,9 +27,10 @@ CI_SYSTEM = """You are a DevOps engineer practising DevSecOps. Produce a hardene
 and a GitLab CI/CD pipeline integrated with Jenkins:
 - Dockerfile — pin a slim base image (no `:latest`), run as a non-root `USER`, add a
   `HEALTHCHECK`, and bake in no secrets.
-- .gitlab-ci.yml — stages that install deps, lint and run pytest on merge requests, plus a
-  `security` stage that shifts security left: a SAST scan (Bandit/Semgrep), a dependency
-  scan (pip-audit), and a Trivy image+config scan that fails on HIGH/CRITICAL; then a final
+- .gitlab-ci.yml — stages that install deps, lint and run the project's test suite on merge
+  requests, plus a `security` stage that shifts security left: a SAST scan (e.g.
+  Semgrep/Bandit), a dependency scan appropriate to the stack (e.g. pip-audit / npm audit /
+  govulncheck), and a Trivy image+config scan that fails on HIGH/CRITICAL; then a final
   `trigger-jenkins` job that calls Jenkins' remote build API (buildWithParameters) using
   masked GitLab CI/CD variables ($JENKINS_URL, $JENKINS_TOKEN).
 - Jenkinsfile — a Declarative pipeline (agent, stages: Checkout, Install, Lint, Test) that
@@ -75,22 +84,24 @@ def devops_ci_node(state: TeamState) -> TeamState:
             "vulnerability-scanning",
         ],
     )
+    stack = stack_hint(state) or "the application"
     files = emit_files(
         state,
         model_role="devops_ci",
         character=ROLE,
         system_prompt=CI_SYSTEM,
         user_prompt=(
-            "Containerise this Python service and set up CI with GitLab integrated with "
-            "Jenkins. The app runs with `uvicorn app.main:app`. Provide Dockerfile, "
-            "a .gitlab-ci.yml that lints and tests then triggers Jenkins, and a Jenkinsfile."
+            f"Containerise this {stack} service and set up CI with GitLab integrated with "
+            "Jenkins. Provide a Dockerfile suited to the stack (correct base image plus "
+            "build and run commands for it), a .gitlab-ci.yml that installs deps, lints and "
+            "runs the test suite then triggers Jenkins, and a Jenkinsfile."
         )
         + feature_brief(state),
         research_queries=[
             "latest GitLab CI/CD .gitlab-ci.yml syntax and stages 2026",
             "latest Jenkins declarative pipeline Jenkinsfile best practices 2026",
             "trigger Jenkins job from GitLab CI remote build API 2026",
-            "latest official Python Docker base image tags 2026",
+            f"latest official Docker base image tags for {stack} 2026",
         ],
     )
     return {

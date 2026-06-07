@@ -18,7 +18,7 @@ LLAMA_SERVER="$LLAMA_CPP_DIR/build/bin/llama-server"
 GGUF_DIR="$(pwd)/ggufs"
 
 echo "==> Installing Python dependencies with uv (incl. the llama-cpp extra)"
-uv sync --extra dev --extra llama-cpp --extra search --extra dev --extra openai.
+uv sync --extra dev --extra llama-cpp --extra search --extra dev --extra openai
 
 # --- Locate a local GGUF -----------------------------------------------------------
 GGUF_PATH="/home/apoman123/SoftwareTeam/ggufs" # modify your gguf file path

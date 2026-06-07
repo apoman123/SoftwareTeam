@@ -11,7 +11,15 @@ from .. import ui
 from ..skills.common import filesystem, shell
 from ..skills.registry import skill_names
 from ..state import TeamState
-from .base import emit_files, feature_brief, generate, output_dir, relpath, with_skills
+from .base import (
+    emit_files,
+    feature_brief,
+    generate,
+    output_dir,
+    relpath,
+    stack_hint,
+    with_skills,
+)
 
 ROLE = "qa_engineer"
 
@@ -19,11 +27,12 @@ PLAN_SYSTEM = """You are a QA Engineer / SDET. From acceptance criteria you deri
 explicit, traceable test cases (TC-n -> US-n), enumerate edge cases and failure modes,
 and sketch a performance/load scenario. Output markdown only."""
 
-E2E_SYSTEM = """You are an SDET writing automated end-to-end / API tests with pytest.
-Cover the happy path and edge cases (invalid input, missing resources). If the app uses
-FastAPI, use its TestClient and guard the import with pytest.importorskip('fastapi').
-Emit each test file as:
-<<<FILE tests/test_e2e.py >>>
+E2E_SYSTEM = """You are an SDET writing automated end-to-end / API tests. Use the test
+framework idiomatic to the project's stack (e.g. pytest + FastAPI TestClient for Python,
+Jest/Supertest for Node.js, `go test` for Go) and make the suite runnable with that
+stack's standard test command. Cover the happy path and edge cases (invalid input, missing
+resources). Emit each test file as:
+<<<FILE tests/<test file for the stack> >>>
 <contents>
 <<<END>>>"""
 
@@ -70,10 +79,11 @@ def qa_test_node(state: TeamState) -> TeamState:
     )
     out = output_dir(state)
 
-    # 1) Author E2E tests from the plan + the built code.
+    # 1) Author E2E tests from the plan + the built code, in the project's stack.
     listing = "\n".join(state.get("source_files", {}).keys())
     user = (
-        "Write end-to-end tests for this project.\n\n"
+        "Write end-to-end tests for this project using its stack's test framework.\n\n"
+        f"### Tech Stack\n{state.get('tech_stack', '')}\n\n"
         f"### Test plan\n{state.get('test_plan', '')}\n\n"
         f"### Files in the project\n{listing}\n"
     ) + feature_brief(state)
@@ -84,19 +94,22 @@ def qa_test_node(state: TeamState) -> TeamState:
         system_prompt=E2E_SYSTEM,
         user_prompt=user,
         research_queries=[
-            "latest pytest and FastAPI TestClient API 2026",
+            "latest end-to-end and API testing frameworks for "
+            f"{stack_hint(state) or 'web services'} 2026",
         ],
     )
 
-    # 2) Run the whole suite.
-    result = shell.run_pytest(out)
-    passed = result.ok
+    # 2) Run every component's suite (backend at the root, plus frontend/ when present).
+    outcome = shell.run_test_suites(out)
+    passed = outcome.passed
     verdict = "[green]passed[/green]" if passed else "[red]failed[/red]"
-    ui.note(f"pytest exit={result.returncode} → {verdict}")
+    ran = ", ".join(run.component for run in outcome.runs) or "none"
+    skipped = f"; skipped: {', '.join(outcome.skipped)}" if outcome.skipped else ""
+    ui.note(f"tests → {verdict} (ran: {ran}{skipped})")
 
     return {
         "source_files": e2e_files,
-        "test_results": result.summary(),
+        "test_results": outcome.summary(),
         "tests_passed": passed,
         "current_phase": "deploy",
     }

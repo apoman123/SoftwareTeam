@@ -12,31 +12,41 @@ from .. import ui
 from ..skills.common import filesystem
 from ..skills.registry import skill_names
 from ..state import FEATURE_MODE, TeamState
-from .base import emit_files, feature_brief, generate, output_dir, relpath, with_skills
+from .base import (
+    emit_files,
+    feature_brief,
+    generate,
+    output_dir,
+    relpath,
+    stack_hint,
+    with_skills,
+)
 
 ROLE = "software_engineer"
 
 FILE_PROTOCOL = (
     "Emit every file in this exact format, one block per file:\n"
-    "<<<FILE relative/path.py >>>\n<file contents>\n<<<END>>>\n"
+    "<<<FILE relative/path.ext >>>\n<file contents>\n<<<END>>>\n"
     "Do not wrap blocks in markdown fences."
 )
 
-BUILD_SYSTEM = f"""You are a Software Engineer. You write clean, idiomatic programming languages and
-matching unit tests. Keep pure business logic in a framework-free module so it is easy
-to unit test, and put the web framework in a thin adapter. Include a requirements.txt.
-{FILE_PROTOCOL}"""
+BUILD_SYSTEM = f"""You are a Software Engineer. You write clean, idiomatic code in the
+project's chosen language with matching unit tests. Implement strictly in the stack chosen
+in the architecture — never substitute another language or framework. Keep pure business
+logic in a framework-free module so it is easy to unit test, and put the delivery framework
+in a thin adapter. Include the dependency manifest for the chosen stack (e.g.
+requirements.txt, package.json, go.mod, Cargo.toml). {FILE_PROTOCOL}"""
 
-FIX_SYSTEM = f"""You are a Software Engineer fixing failing tests. Read the unit test
+FIX_SYSTEM = f"""You are a Software Engineer fixing failing tests. Read the test
 output, find the root cause, and re-emit ONLY the files you change with corrected
 contents. {FILE_PROTOCOL}"""
 
 README_SYSTEM = """You are a Software Engineer writing the repository README — the
 project's front door for other engineers and users. Explain what the project does, the
-prerequisites and versions, how to set it up locally (create a virtual environment, then
-install the pinned dependencies from requirements.txt), how to run it, and how to call
-its API with copy-pasteable examples. Output GitHub-flavoured markdown only (no file
-blocks)."""
+prerequisites and versions, how to set it up locally (install the pinned dependencies from
+the stack's dependency manifest), how to run it, and how to use it with copy-pasteable
+examples — all with commands appropriate to the project's stack. Output GitHub-flavoured
+markdown only (no file blocks)."""
 
 
 def _code_listing(files: dict[str, str]) -> str:
@@ -44,21 +54,12 @@ def _code_listing(files: dict[str, str]) -> str:
     return "\n\n".join(f"# {path}\n```\n{content}\n```" for path, content in files.items())
 
 
-def _stack_hint(state: TeamState) -> str:
-    """Return a short keyword hint of the chosen stack, for grounding code-gen searches."""
-    stack = (state.get("tech_stack") or "").strip()
-    if not stack:
-        return "Python FastAPI"
-    first_line = next((line.strip(" -*#") for line in stack.splitlines() if line.strip()), "")
-    return (first_line or stack)[:120]
-
-
 def _build_research_queries(state: TeamState) -> list[str]:
     """Return the web queries that ground the build node in current library APIs."""
-    hint = _stack_hint(state)
+    hint = stack_hint(state) or "the project's language and framework"
     return [
         f"latest API and recommended usage for {hint} 2026",
-        "latest FastAPI and Pydantic v2 version and best practices 2026",
+        f"idiomatic project structure and testing for {hint} 2026",
     ]
 
 
@@ -71,8 +72,11 @@ def software_engineer_node(state: TeamState) -> TeamState:
         skill_names(ROLE),
     )
     user = (
-        "Implement the service described below. Provide application code, unit tests "
-        "(pytest) for the business logic, and requirements.txt.\n\n"
+        "Implement the service described below using the stack chosen in the architecture "
+        "(do not substitute another language). Provide application code, unit tests for the "
+        "business logic using that stack's standard test framework, and the stack's "
+        "dependency manifest.\n\n"
+        f"### Tech Stack\n{state.get('tech_stack', '')}\n\n"
         f"### Architecture & API\n{state.get('architecture', '')}\n\n"
         f"### Acceptance Criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"{FILE_PROTOCOL}"
@@ -108,7 +112,7 @@ def software_engineer_fix_node(state: TeamState) -> TeamState:
     )
     user = (
         "The test suite failed. Fix the code.\n\n"
-        f"### pytest output\n{state.get('test_results', '')}\n\n"
+        f"### Test output\n{state.get('test_results', '')}\n\n"
         f"### Current files\n{_code_listing(state.get('source_files', {}))}\n\n"
         f"{FILE_PROTOCOL}"
     )
@@ -119,7 +123,7 @@ def software_engineer_fix_node(state: TeamState) -> TeamState:
         system_prompt=FIX_SYSTEM,
         user_prompt=user,
         research_queries=[
-            f"latest API and recommended usage for {_stack_hint(state)} 2026",
+            f"latest API and recommended usage for {stack_hint(state) or 'the project stack'} 2026",
         ],
     )
     return {"source_files": files, "fix_iters": iters, "current_phase": "deploy"}
@@ -130,15 +134,24 @@ def software_engineer_readme_node(state: TeamState) -> TeamState:
     ui.announce(ROLE, "document", "Writing the repository README", ["write-readme"])
     files = state.get("source_files", {})
     listing = "\n".join(sorted(files))
+    manifest = next(
+        (
+            f"### Dependency manifest ({name})\n{files[name]}\n"
+            for name in ("requirements.txt", "package.json", "go.mod", "Cargo.toml", "pom.xml")
+            if name in files
+        ),
+        "",
+    )
     user = (
         "Write the repository README.md for the project below. Include, with concrete "
-        "commands: a short overview, prerequisites and versions, local setup (create a "
-        "virtual environment, then `pip install -r requirements.txt`), how to run it "
-        "(e.g. `uvicorn app.main:app --reload`), an API usage section with example "
-        "`curl` calls, and how to run the tests.\n\n"
+        "commands appropriate to this project's stack: a short overview, prerequisites and "
+        "versions, local setup (install the pinned dependencies from the dependency "
+        "manifest), how to run it, a usage section with copy-pasteable examples, and how to "
+        "run the tests.\n\n"
+        f"### Tech Stack\n{state.get('tech_stack', '')}\n\n"
         f"### Architecture & API\n{state.get('architecture', '')}\n\n"
         f"### Project files\n{listing}\n\n"
-        f"### Dependencies (requirements.txt)\n{files.get('requirements.txt', '')}\n"
+        f"{manifest}"
     ) + feature_brief(state)
     doc = generate(
         "software_engineer_readme",
@@ -146,7 +159,8 @@ def software_engineer_readme_node(state: TeamState) -> TeamState:
         user,
         state,
         research_queries=[
-            f"latest README conventions and {_stack_hint(state)} quickstart commands 2026",
+            "latest README conventions and "
+            f"{stack_hint(state) or 'project'} quickstart commands 2026",
         ],
     )
     path = filesystem.write_file(output_dir(state), "README.md", doc)

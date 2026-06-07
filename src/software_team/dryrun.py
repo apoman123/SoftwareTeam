@@ -441,6 +441,115 @@ def test_empty_title_rejected():
 QA_FILES = {"tests/test_e2e.py": _E2E_TESTS}
 
 # --------------------------------------------------------------------------- #
+# Frontend (dry-run): a minimal React client for the Task API, under frontend/.
+# Only emitted when triage decides the project needs a UI (needs_frontend).
+# --------------------------------------------------------------------------- #
+
+_FRONTEND_PACKAGE_JSON = """\
+{
+  "name": "task-app-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "vite": "^5.3.0",
+    "vitest": "^2.0.0"
+  }
+}
+"""
+
+_FRONTEND_API_JS = """\
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
+export async function listTasks() {
+  const res = await fetch(`${BASE_URL}/tasks`);
+  if (!res.ok) throw new Error("Failed to load tasks");
+  return res.json();
+}
+
+export async function addTask(title) {
+  const res = await fetch(`${BASE_URL}/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error("Title is required");
+  return res.json();
+}
+"""
+
+_FRONTEND_APP_JSX = """\
+import { useEffect, useState } from "react";
+import { addTask, listTasks } from "./api.js";
+
+export default function App() {
+  const [tasks, setTasks] = useState([]);
+  const [title, setTitle] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    listTasks().then(setTasks).catch((e) => setError(e.message));
+  }, []);
+
+  async function onAdd(e) {
+    e.preventDefault();
+    try {
+      const task = await addTask(title);
+      setTasks((prev) => [...prev, task]);
+      setTitle("");
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <main>
+      <h1>Tasks</h1>
+      {tasks.length === 0 ? <p>No tasks yet — add your first one.</p> : null}
+      <ul>
+        {tasks.map((t) => (
+          <li key={t.id}>{t.title}</li>
+        ))}
+      </ul>
+      <form onSubmit={onAdd}>
+        <label htmlFor="title">New task</label>
+        <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <button type="submit">Add</button>
+      </form>
+      {error ? <p role="alert">{error}</p> : null}
+    </main>
+  );
+}
+"""
+
+_FRONTEND_TEST = """\
+import { describe, expect, it } from "vitest";
+
+describe("frontend smoke", () => {
+  it("knows the empty-state copy", () => {
+    expect("No tasks yet — add your first one.").toContain("No tasks yet");
+  });
+});
+"""
+
+FRONTEND_FILES = {
+    "frontend/package.json": _FRONTEND_PACKAGE_JSON,
+    "frontend/src/api.js": _FRONTEND_API_JS,
+    "frontend/src/App.jsx": _FRONTEND_APP_JSX,
+    "frontend/src/App.test.js": _FRONTEND_TEST,
+}
+
+# --------------------------------------------------------------------------- #
 # DevOps / SRE artifacts
 # --------------------------------------------------------------------------- #
 
@@ -872,21 +981,23 @@ _UX_DOC = """\
 3. User completes a task -> item shows done=true.
 4. User deletes a task -> item disappears.
 
-## Wireframe (reference console client)
-```
-+--------------------------------------------------+
-|  TASKS                                           |
-+--------------------------------------------------+
-|  [ ] (1) buy milk                  [done][del]   |
-|  [x] (2) write report              [done][del]   |
-+--------------------------------------------------+
-|  New task: [__________________________] [ Add ]  |
-+--------------------------------------------------+
-```
+## Screen & Layout Description
+- Task list (single screen). A title header ("Tasks") sits at the top. The main region is
+  the list of tasks, one row per task showing a done indicator, the title, and complete
+  and delete actions. The primary action is the "add task" input with its Add button, kept
+  at the bottom of the list. On narrow widths the per-row actions stack beneath the title.
 
-## Component / State Notes
-- Empty state: "No tasks yet — add your first one."
-- Error toast on 400 (empty title) and 404 (missing task).
+## Component & State Specs
+- Add field: validates on blur; an empty or whitespace-only title is rejected with the
+  inline message "Title is required" (default / focus / error states).
+- Task list: empty state reads "No tasks yet — add your first one."; each row has default
+  and completed states.
+- Errors: 400 (empty title) and 404 (missing task) surface as an inline error message
+  with a clear recovery path, never colour alone.
+
+## Usability & Accessibility Notes
+- Visible labels on the input; every control is keyboard-operable with a visible focus ring.
+- Done state is conveyed by both the indicator and text, not colour alone (WCAG POUR).
 """
 
 _TL_DOC = """\
@@ -1139,6 +1250,8 @@ def canned_response(role: str, prompt: str) -> str:
         if FEATURE_BRIEF_HEADER in prompt:
             return file_blocks(FEATURE_FILES)
         return file_blocks(SWE_FILES)
+    if role == "frontend_engineer":
+        return file_blocks(FRONTEND_FILES)
     if role == "qa_engineer":
         return file_blocks(QA_FILES)
     if role == "devops_ci":

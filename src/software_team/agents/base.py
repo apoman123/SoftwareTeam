@@ -10,6 +10,7 @@ so every character behaves consistently and stays dry-run aware.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -61,6 +62,97 @@ def feature_brief(state: TeamState) -> str:
         "what the feature needs, preserve existing behaviour and unchanged files, and do "
         "not rebuild the project from scratch.\n\n" + state.get("baseline", "")
     )
+
+
+# Languages, frameworks and runtimes recognised in a free-text spec so that — before the
+# Tech Lead has chosen a stack — research and code generation can ground in the technology
+# the stakeholder actually asked for instead of a hardcoded default. Lower-cased; matched
+# as whole tokens (see ``_requested_stack``). Order longest/most-specific first so e.g.
+# "javascript" wins over "java" and "golang" over "go".
+_KNOWN_TECH: tuple[str, ...] = (
+    "node.js",
+    "nodejs",
+    "typescript",
+    "javascript",
+    "nestjs",
+    "next.js",
+    "express",
+    "react",
+    "angular",
+    "svelte",
+    "vue",
+    "deno",
+    "bun",
+    "fastapi",
+    "django",
+    "flask",
+    "python",
+    "golang",
+    "go",
+    "gin",
+    "rust",
+    "actix",
+    "axum",
+    "spring",
+    "kotlin",
+    "ktor",
+    "scala",
+    "java",
+    "asp.net",
+    ".net",
+    "c#",
+    "c++",
+    "laravel",
+    "rails",
+    "ruby",
+    "php",
+    "phoenix",
+    "elixir",
+)
+
+
+def _requested_stack(state: TeamState) -> str:
+    """Detect any language/framework the stakeholder named in the spec or stories.
+
+    Scans the raw spec and the PM's stories (case-insensitively) for known technologies so
+    a stated constraint such as "use Node.js" survives even before the Tech Lead has picked
+    a stack. Matches whole tokens so "go" is not found inside "goal".
+
+    Args:
+        state: The shared team state (reads ``spec_text`` then ``user_stories``).
+
+    Returns:
+        The recognised technologies, space-joined in first-seen order, or "" if none.
+    """
+    text = f"{state.get('spec_text', '')}\n{state.get('user_stories', '')}".lower()
+    found: list[str] = []
+    for tech in _KNOWN_TECH:
+        # Bound by alphanumerics only so "go" is not found inside "goal"/"google" but a
+        # token at a sentence end ("Express.") or before punctuation still matches.
+        pattern = rf"(?<![a-z0-9]){re.escape(tech)}(?![a-z0-9])"
+        if tech not in found and re.search(pattern, text):
+            found.append(tech)
+    return " ".join(found)
+
+
+def stack_hint(state: TeamState) -> str:
+    """Return a short label of the project's stack to ground research and code generation.
+
+    Prefers the Tech Lead's chosen ``tech_stack`` once it exists; otherwise falls back to
+    any stack the stakeholder explicitly requested in the spec. Returns "" when neither is
+    known yet, so callers stay language-agnostic and supply their own generic fallback.
+
+    Args:
+        state: The shared team state.
+
+    Returns:
+        A concise stack descriptor (<= 120 chars), or "" when none is known yet.
+    """
+    stack = (state.get("tech_stack") or "").strip()
+    if stack:
+        first_line = next((line.strip(" -*#") for line in stack.splitlines() if line.strip()), "")
+        return (first_line or stack)[:120]
+    return _requested_stack(state)
 
 
 def research(state: TeamState, queries: list[str]) -> str:

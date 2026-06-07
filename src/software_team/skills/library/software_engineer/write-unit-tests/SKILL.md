@@ -5,7 +5,8 @@ description: Writes fast, isolated unit tests that form the base of the test pyr
 
 # Write unit tests
 
-Write fast, isolated unit tests for the business logic with pytest.
+Write fast, isolated unit tests for the business logic with the project's standard test
+framework (e.g. pytest for Python, Jest/Vitest for Node.js, `go test` for Go).
 
 - Follow **Arrange-Act-Assert**, one behaviour per test.
 - Cover **error paths** as well as the happy path.

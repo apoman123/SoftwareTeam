@@ -4,15 +4,15 @@
 set -euo pipefail
 
 LLAMA_SERVER="${LLAMA_SERVER:-/home/apoman123/llama.cpp/build/bin/llama-server}"
-GGUF_DIR="/home/apoman123/SoftwareTeam/ggufs"
+GGUF_DIR="/home/apomam123/SoftwareTeam/ggufs"
 
 # Model to serve. Override with: MODEL=...IQ4_NL.gguf ./serve-llama.sh
-# MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf}"
-MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf}"
+MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf}"
+# MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ2_M.gguf}"
 
 # The id opencode sends in requests; must match the model key in opencode.jsonc.
-# ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M}"
-ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL}"
+ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M}"
+# ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ2_M}"
 
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8090}"
@@ -23,7 +23,7 @@ CTX="${CTX:-262144}"   # 32k context window (overridable: CTX=... ./serve-llama.
 # the rest (attention/shared layers) on the GPU. Flash-attn + q8_0 KV cache keep the
 # context's KV footprint small so it fits in the remaining VRAM. Lower CTX or raise it
 # back to 131072 if you have headroom.
-exec "$LLAMA_SERVER" \
+exec llama-server \
   --model "$GGUF_DIR/$MODEL" \
   --alias "$ALIAS" \
   --host "$HOST" --port "$PORT" \
@@ -34,5 +34,5 @@ exec "$LLAMA_SERVER" \
   --cache-type-k q4_0 \
   --cache-type-v q4_0 \
   --jinja \
-  -fit off \
+  --fit off \
   --metrics

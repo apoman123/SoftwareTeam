@@ -79,6 +79,7 @@ ROLE_TIERS: dict[str, str] = {
     "qa_planning": "narrative",
     "software_engineer": "coder",
     "software_engineer_fix": "coder",
+    "frontend_engineer": "coder",
     "devops_ci": "narrative",
     "devops_cd": "narrative",
     "operate": "narrative",
@@ -127,6 +128,16 @@ class Settings:
     coder_model: str = field(default_factory=lambda: _model("coder"))
     narrative_model: str = field(default_factory=lambda: _model("narrative"))
     temperature: float = field(default_factory=lambda: _env_float("SWTEAM_TEMPERATURE", 0.2))
+    # Hard cap on tokens generated per LLM turn. Without it a local model can fall into a
+    # degenerate repetition loop (e.g. repeating a list item or table row) and emit tokens up to
+    # the full context window, which looks like the run "hanging". Bounds every turn so it
+    # always terminates; raise it for code-heavy runs that legitimately emit large files.
+    max_tokens: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_TOKENS", 8192))
+    # Per-request timeout (seconds). A wedged or OOM-killed local server otherwise leaves the
+    # client blocked forever; with this the call fails fast instead of stalling the workflow.
+    request_timeout: float = field(
+        default_factory=lambda: _env_float("SWTEAM_REQUEST_TIMEOUT", 600.0)
+    )
 
     # --- Ollama ---
     ollama_host: str = field(default_factory=lambda: _env("OLLAMA_HOST", "http://localhost:11434"))

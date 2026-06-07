@@ -54,6 +54,9 @@ def _build_ollama(model: str) -> Any:
         model=model,
         base_url=SETTINGS.ollama_host,
         temperature=SETTINGS.temperature,
+        # Ollama spells the generation cap "num_predict"; bounds each turn so a runaway
+        # local model can't generate to the end of its context and stall the run.
+        num_predict=SETTINGS.max_tokens,
     )
 
 
@@ -66,7 +69,14 @@ def _build_openai(model: str) -> Any:
             "`uv sync --extra openai`."
         ) from e
 
-    kwargs: dict[str, Any] = {"model": model, "temperature": SETTINGS.temperature}
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "temperature": SETTINGS.temperature,
+        # Bound generation and add a deadline so a local OpenAI-compatible server (llama.cpp,
+        # vLLM, LM Studio…) that loops or wedges fails fast instead of hanging the workflow.
+        "max_tokens": SETTINGS.max_tokens,
+        "timeout": SETTINGS.request_timeout,
+    }
     if SETTINGS.openai_api_key:
         kwargs["api_key"] = SETTINGS.openai_api_key
     if SETTINGS.openai_base_url:
@@ -102,7 +112,12 @@ def _build_anthropic(model: str) -> Any:
             "`uv sync --extra anthropic`."
         ) from e
 
-    kwargs: dict[str, Any] = {"model": model}
+    kwargs: dict[str, Any] = {
+        "model": model,
+        # Anthropic requires a max_tokens; honour the shared cap and add a request deadline.
+        "max_tokens": SETTINGS.max_tokens,
+        "timeout": SETTINGS.request_timeout,
+    }
     if SETTINGS.anthropic_api_key:
         kwargs["api_key"] = SETTINGS.anthropic_api_key
     # Opus 4.7+ reject temperature/top_p/top_k (HTTP 400); only set it where accepted.
@@ -120,7 +135,13 @@ def _build_google(model: str) -> Any:
             "`uv sync --extra google`."
         ) from e
 
-    kwargs: dict[str, Any] = {"model": model, "temperature": SETTINGS.temperature}
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "temperature": SETTINGS.temperature,
+        # Gemini spells the cap "max_output_tokens"; add a request deadline too.
+        "max_output_tokens": SETTINGS.max_tokens,
+        "timeout": SETTINGS.request_timeout,
+    }
     if SETTINGS.google_api_key:
         kwargs["google_api_key"] = SETTINGS.google_api_key
     return ChatGoogleGenerativeAI(**kwargs)
@@ -140,7 +161,12 @@ def _build_llama_cpp(model: str) -> Any:
             "Install them with `uv sync --extra llama-cpp`."
         ) from e
 
-    return ChatLlamaCpp(model_path=model, temperature=SETTINGS.temperature)
+    return ChatLlamaCpp(
+        model_path=model,
+        temperature=SETTINGS.temperature,
+        # In-process llama.cpp: cap tokens so a runaway/looping generation always terminates.
+        max_tokens=SETTINGS.max_tokens,
+    )
 
 
 _BUILDERS = {

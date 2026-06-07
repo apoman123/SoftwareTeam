@@ -2,16 +2,23 @@
 
 A cross-functional, "you build it, you run it" software team, implemented as a
 multi-agent system. Tell the Product Manager what you want — either a spec **file**
-describing your use cases, or a one-line feature **prompt** on the command line — and six
-AI characters carry the feature through the whole software lifecycle — Plan & Design →
-Code & Build → Deploy & Release → Operate & Monitor → Document & Handoff — writing a
-runnable project plus all its CI/CD, DevOps, and documentation artifacts to a workspace
-directory.
+describing your use cases, or a one-line feature **prompt** on the command line — and a
+team of AI characters carries the feature through the whole software lifecycle — Plan &
+Design → Code & Build → Deploy & Release → Operate & Monitor → Document & Handoff — writing
+a runnable project plus all its CI/CD, DevOps, and documentation artifacts to a workspace
+directory. The pipeline is **capability-aware**: it only runs the phases a project needs
+(no frontend for a pure API, no deployment for a library — see below).
 
 Highlights:
 
 - **Six specialist characters.** A Product Manager, UI/UX Designer, Tech Lead, Software
-  Engineer, QA/SDET, and DevOps/SRE — each a graph node with its own curated skill set.
+  Engineer, QA/SDET, and DevOps/SRE — each a graph node with its own curated skill set. A
+  Frontend Engineer (reusing the Software Engineer's skill set) joins whenever the product
+  needs a UI.
+- **Capability-aware routing.** Deterministic triage classifies the spec into
+  `needs_frontend` / `needs_backend` / `needs_deployment`, and the supervisor skips phases
+  that don't apply: no UX/frontend for a pure API, no backend for a static/frontend-only
+  site, and no containerisation/CI-CD/operate for a library, CLI or script.
 - **Pluggable LLM backend.** Pick a local Ollama server, the OpenAI API (or any
   OpenAI-compatible endpoint), the Anthropic API (Claude), Google Gemini (google-genai),
   or a local GGUF model via llama.cpp, with a single environment variable.
@@ -33,9 +40,10 @@ catalogue.
 | Character | Phase focus | Skills |
 |-----------|-------------|--------|
 | 🧭 **Product Manager** | Plan + Document | `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics`, `write-user-manual` |
-| 🎨 **UI/UX Designer** | Plan | `generate-design-system`, `map-user-flow`, `create-wireframe`, `specify-components`, `apply-usability-heuristics`, `apply-ui-quality-checklist`, `ensure-accessibility` |
+| 🎨 **UI/UX Designer** | Plan | `map-user-flow`, `describe-ui-layout`, `specify-components`, `apply-usability-heuristics`, `apply-ui-quality-checklist`, `ensure-accessibility` |
 | 🧠 **Tech Lead / Architect** | Plan + supervise | `select-tech-stack`, `design-architecture`, `define-api-spec`, `design-db-schema`, `write-adr`, `review-code`, `route-workflow` |
 | 💻 **Software Engineer** | Code + Operate + Document | `scaffold-project`, `write-code`, `write-unit-tests`, `run-tests`, `fix-bug`, `manage-version-control`, `write-readme` |
+| 🖥️ **Frontend Engineer** _(only if `needs_frontend`)_ | Code | reuses the Software Engineer's skill set; builds the UI under `frontend/` from the UX + API contract |
 | 🧪 **QA / SDET** | Plan + Deploy + Document | `design-test-cases`, `analyze-edge-cases`, `write-e2e-tests`, `plan-performance-tests`, `execute-tests`, `inspect-project`, `write-test-report` |
 | 🚀 **DevOps / SRE** | Code + Deploy + Operate + Document | `containerize-service`, `build-ci-pipeline`, `build-cd-pipeline`, `write-infrastructure-code`, `write-k8s-manifests`, `configure-observability`, `write-runbook`, `audit-container-security`, `document-infrastructure` |
 
@@ -56,24 +64,20 @@ resource limits), and the 🚀 DevOps/SRE then runs an offline **security audit*
 [**BagelHole/DevOps-Security-Agent-Skills**](https://github.com/BagelHole/DevOps-Security-Agent-Skills)
 (MIT, © 2026 Toby Miller). The audit is deterministic and offline, so it also runs in `--dry-run`.
 
-**Design intelligence for the UI/UX Designer.** Before sketching anything, the 🎨 UI/UX
-Designer runs an offline **design-system engine** (`skills/common/design_system.py`):
-given the product brief it BM25-searches a vendored knowledge base of product types,
-visual styles, colour palettes and font pairings and applies per-industry reasoning rules
-to recommend a complete design system — page pattern, style, **semantic colour tokens**,
-typography, key effects, and the **anti-patterns to avoid** — written to
-`docs/design_system.md` and folded into the designer's prompt so flows and wireframes are
-grounded in a deliberate system. The reasoning model and knowledge base
-(`skills/common/uiux_data/`) are adapted from
+**Describe, don't draw — for the UI/UX Designer.** The 🎨 UI/UX Designer hands the Tech
+Lead a *written* description of the UI and the user experience — never a drawing. It maps
+the user flow, describes each screen's layout, content hierarchy and primary action in
+words (no wireframes, ASCII art, or diagrams), specifies each component's states,
+validation and copy, and checks the design against Nielsen's heuristics and WCAG's POUR
+principles. The output is `docs/ux_design.md`, which the Tech Lead designs the
+architecture against. The companion `apply-ui-quality-checklist` skill distils a
+priority-ordered UX review pass adapted from
 [**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
-(MIT, © 2024 Next Level Builder); it backs the `generate-design-system` skill (and the
-`design_system` / `ui_ux_search` tools). The companion `apply-ui-quality-checklist` skill
-distils that project's UX rule set into a priority-ordered review pass. Both run offline,
-so they also work in `--dry-run`.
+(MIT, © 2024 Next Level Builder).
 
 Skills come in two kinds: **tool-backed** skills that perform real I/O (writing files,
-running pytest — implemented as LangChain `@tool`s under `skills/common/`) and
-**reasoning** skills that the LLM performs in context.
+running the project's test suite — implemented as LangChain `@tool`s under `skills/common/`)
+and **reasoning** skills that the LLM performs in context.
 
 **Foundation skills for the code authors.** The three characters that write code —
 💻 Software Engineer, 🧪 QA/SDET, and 🚀 DevOps/SRE — additionally load two shared
@@ -116,9 +120,7 @@ skills/
   base.py        # the Skill dataclass + guidance composer
   loader.py      # discovers and parses each SKILL.md (frontmatter + body)
   registry.py    # groups skills by character -> ROLE_SKILLS
-  common/        # executable tools (filesystem, shell, web search, design-system engine), tool registry, authoring
-    design_system.py  # offline UI/UX design-system reasoning engine (design_system / ui_ux_search tools)
-    uiux_data/        # vendored UI/UX knowledge base (CSV) + LICENSE/ATTRIBUTION (ui-ux-pro-max-skill, MIT)
+  common/        # executable tools (filesystem, shell, web search), tool registry, authoring
     security.py       # offline DevSecOps audit of Dockerfile/k8s/CI artifacts (security_audit tool)
   library/       # the SKILL.md library — one folder per character, one folder per skill
     _foundation/        # shared skills the code authors load first (karpathy-guidelines, follow-google-style)
@@ -149,12 +151,11 @@ are distilled from [**BagelHole/DevOps-Security-Agent-Skills**](https://github.c
 (MIT, © 2026 Toby Miller); its tool-backed `audit-container-security` skill (a DevOps role
 skill) runs the offline `security_audit` tool built from the same checklist.
 
-The 🎨 **UI/UX Designer** additionally draws on an embedded design-system engine rather
-than a `_shared/` skill: its `generate-design-system` and `apply-ui-quality-checklist`
-skills are backed by `skills/common/design_system.py` and the vendored knowledge base in
-`skills/common/uiux_data/`, both adapted from
+The 🎨 **UI/UX Designer**'s `apply-ui-quality-checklist` is a reasoning skill that distils
+a priority-ordered UX review pass adapted from
 [**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
-(MIT, © 2024 Next Level Builder; see `uiux_data/LICENSE` and `uiux_data/ATTRIBUTION.md`).
+(MIT, © 2024 Next Level Builder). The designer describes the UI in words for the Tech
+Lead and draws nothing, so it ships no embedded engine or vendored data.
 
 Sources (all MIT-licensed; each `SKILL.md` carries the specific link):
 [`jenkins-expert`](https://github.com/0xfurai/claude-code-subagents/blob/main/agents/jenkins-expert.md)
@@ -304,16 +305,17 @@ exists.
 
 ```text
 README.md                # how to set up, run, and call the service (Software Engineer)
-app/                     # runnable FastAPI service (pure logic + thin web adapter)
+app/                     # runnable service in the chosen stack (pure logic + thin adapter; e.g. FastAPI)
+frontend/                # the UI in the chosen frontend stack — only when needs_frontend (Frontend Engineer)
 tests/                   # unit tests + E2E API tests (run automatically by QA)
-requirements.txt
-Dockerfile               # hardened: non-root, pinned base, HEALTHCHECK
+requirements.txt         # the stack's dependency manifest (e.g. package.json / go.mod)
+Dockerfile               # hardened: non-root, pinned base, HEALTHCHECK — only when needs_deployment
 .gitlab-ci.yml           # GitLab CI/CD: lint + test + security scans, then trigger Jenkins (+ manual deploy)
 Jenkinsfile              # Jenkins Declarative pipeline: build + safe rollout with rollback
 terraform/main.tf        # IaC
 k8s/                     # deployment (hardened securityContext + limits) and service
 monitoring/              # prometheus.yml, alerts.yml
-docs/                    # backlog, design_system, ux, architecture, openapi, schema,
+docs/                    # backlog, ux, architecture, openapi, schema,
                          # test plan, runbook, operations report, security_review, and the
                          # handoff docs: test_report, infrastructure, user_manual, release_notes
 ```
@@ -358,9 +360,29 @@ Copy `.env.example` and adjust. Key variables:
   calling, so the pipeline doesn't depend on it: each character makes a single
   structured generation, and Python *skill functions* persist artifacts and run
   commands. Tool-backed skills are still bound for the SWE/QA loop on capable models.
-- **Verifiable by construction.** Code generation targets Python/FastAPI with business
-  logic kept framework-free, so the generated unit tests pass with only pytest installed;
-  the FastAPI E2E tests `importorskip` when FastAPI isn't present.
+- **Stack-agnostic by design.** The team honours whatever language/framework the spec
+  asks for: the Tech Lead treats a stated stack as a binding constraint (and the raw spec
+  reaches it, so the request is never lost), every node grounds its prompts and research in
+  the chosen stack, and the QA quality gate detects each component's ecosystem
+  (`package.json`, `go.mod`, `Cargo.toml`, …) and runs that stack's test command instead of
+  always `pytest`. When the spec is silent the Tech Lead picks pragmatically — the bundled
+  examples and the `--dry-run` project happen to be Python/FastAPI.
+- **Capability-aware routing.** `software_team/triage.py` deterministically classifies the
+  spec into `needs_frontend`, `needs_backend` and `needs_deployment` (set on the state in
+  `new_state`), and the supervisor's conditional edges skip phases that don't apply: a pure
+  API skips the UX designer and the Frontend Engineer; a static/frontend-only site skips the
+  backend build; a library/CLI/script also skips containerisation, CI/CD, the operate phase,
+  and the infrastructure docs. Classification is keyword-based (no LLM, with explicit
+  "no X" negation handling) so routing is reproducible and dry-run-safe; defaults are
+  conservative (assume a deployable backend, no UI).
+- **Multi-component test gate.** QA runs every testable component — the backend at the root
+  and the UI under `frontend/` — each with its own detected test command, and the gate
+  passes only if all suites that ran passed. A component whose toolchain or dependencies are
+  not installed (e.g. `frontend/` without `node_modules`) is **skipped, never failed**, so
+  the gate works in a bare environment yet still runs everything it can.
+- **Verifiable by construction.** Business logic is kept framework-free, so generated unit
+  tests are fast and stable; the Python/FastAPI E2E tests `importorskip` when FastAPI is
+  absent.
 - **Search grounds, it doesn't drive.** To fit the single-generation design, each
   character runs its web queries *before* generating and folds the findings into that one
   prompt (rather than a multi-step tool loop). `web_search` is also registered as a
@@ -378,8 +400,9 @@ src/software_team/
   llm.py         # multi-provider chat-model factory (ollama/openai/anthropic/google/llama_cpp) + dry-run stub
   dryrun.py      # canned artifacts for --dry-run
   ui.py          # console reporting
-  skills/        # SKILL.md library (loader, registry, common tools incl. web search, design-system + security-audit engines)
-  agents/        # the six characters (one file each) + shared node helpers
+  skills/        # SKILL.md library (loader, registry, common tools incl. web search + security-audit engine)
+  triage.py      # deterministic spec classifier -> needs_frontend / needs_backend / needs_deployment
+  agents/        # the characters (one file each, incl. frontend_engineer) + shared node helpers
   graph.py       # LangGraph StateGraph wiring the phases + loops
   main.py        # Typer CLI
 tests/           # framework tests (routers, skills, full dry-run pipeline, feature mode)

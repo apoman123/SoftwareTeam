@@ -12,6 +12,7 @@ ROLE_LABELS = {
     "ux_designer": "🎨 UI/UX Designer",
     "tech_lead": "🧠 Tech Lead / Architect",
     "software_engineer": "💻 Software Engineer",
+    "frontend_engineer": "🖥️ Frontend Engineer",
     "qa_engineer": "🧪 QA / SDET",
     "devops_sre": "🚀 DevOps / SRE",
 }
