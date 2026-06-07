@@ -7,3 +7,4 @@ workspace/
 *.egg-info/
 dist/
 build/
+ggufs/

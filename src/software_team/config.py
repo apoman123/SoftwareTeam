@@ -15,6 +15,40 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def _load_dotenv() -> None:
+    """Load ``.env`` from the repo root into ``os.environ`` (real env vars win).
+
+    The team is configured entirely through environment variables, and ``.env.example``
+    documents them, but nothing was loading the file — so a ``.env`` selecting e.g. the
+    ``llama_cpp`` provider was ignored and the defaults (Ollama) were used instead. This
+    minimal parser avoids a hard dependency on python-dotenv. Lines that are blank, are
+    comments (``#``), or are already set in the environment are skipped, so an explicit
+    ``export`` always overrides the file.
+    """
+    env_path = repo_root() / ".env"
+    try:
+        text = env_path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :]
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip()
+        # Strip an inline comment that follows the value (only when unquoted).
+        if value[:1] not in ("'", '"') and " #" in value:
+            value = value.split(" #", 1)[0].strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        os.environ[key] = value
+
+
 def _env(name: str, default: str) -> str:
     value = os.environ.get(name)
     return value if value not in (None, "") else default
@@ -138,4 +172,5 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+_load_dotenv()
 SETTINGS = Settings()

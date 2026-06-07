@@ -22,12 +22,12 @@ FILE_PROTOCOL = (
     "Do not wrap blocks in markdown fences."
 )
 
-BUILD_SYSTEM = f"""You are a Software Engineer. You write clean, idiomatic Python and
+BUILD_SYSTEM = f"""You are a Software Engineer. You write clean, idiomatic programming languages and
 matching unit tests. Keep pure business logic in a framework-free module so it is easy
 to unit test, and put the web framework in a thin adapter. Include a requirements.txt.
 {FILE_PROTOCOL}"""
 
-FIX_SYSTEM = f"""You are a Software Engineer fixing failing tests. Read the pytest
+FIX_SYSTEM = f"""You are a Software Engineer fixing failing tests. Read the unit test
 output, find the root cause, and re-emit ONLY the files you change with corrected
 contents. {FILE_PROTOCOL}"""
 
