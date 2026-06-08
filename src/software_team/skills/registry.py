@@ -33,6 +33,26 @@ def guidance_for(role: str) -> str:
     return compose_guidance(skills_for(role))
 
 
+def skill_guidance(role: str, skill_name: str) -> str:
+    """The composed instructions from a single named skill of a role.
+
+    Lets a step load *one specific* skill's guidance on its own (rather than the role's
+    whole set) — e.g. the interactive spec generator loads only ``elicit-requirements``
+    before it writes the spec.
+
+    Args:
+        role: The character whose library to look in (e.g. ``product_manager``).
+        skill_name: The skill's ``name`` (its SKILL.md frontmatter / directory name).
+
+    Returns:
+        The skill's composed guidance, or "" if the role has no such skill.
+    """
+    for skill in skills_for(role):
+        if skill.name == skill_name:
+            return compose_guidance([skill])
+    return ""
+
+
 def skills_catalog() -> str:
     """A human-readable catalogue of every character's skills."""
     lines: list[str] = []

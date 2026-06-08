@@ -44,7 +44,7 @@ catalogue.
 
 | Character | Phase focus | Skills |
 |-----------|-------------|--------|
-| 🧭 **Product Manager** | Plan + Document | `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics`, `write-user-manual` |
+| 🧭 **Product Manager** | Plan + Document | `elicit-requirements`, `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics`, `write-user-manual` |
 | 🎨 **UI/UX Designer** | Plan | `map-user-flow`, `describe-ui-layout`, `specify-components`, `apply-usability-heuristics`, `apply-ui-quality-checklist`, `ensure-accessibility` |
 | 🧠 **Tech Lead / Architect** | Plan + supervise | `select-tech-stack`, `design-architecture`, `define-api-spec`, `design-db-schema`, `write-adr`, `review-code`, `route-workflow` |
 | 💻 **Software Engineer** | Code + Operate + Document | `scaffold-project`, `write-code`, `write-unit-tests`, `run-tests`, `fix-bug`, `manage-version-control`, `write-readme` |
@@ -168,7 +168,9 @@ from **0xfurai/claude-code-subagents** ·
 [**addyosmani/agent-skills**](https://github.com/addyosmani/agent-skills/tree/main/skills) ·
 [**gitlab-org/ai/skills**](https://gitlab.com/gitlab-org/ai/skills/-/tree/main/skills) ·
 [**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) ·
-[**BagelHole/DevOps-Security-Agent-Skills**](https://github.com/BagelHole/DevOps-Security-Agent-Skills).
+[**BagelHole/DevOps-Security-Agent-Skills**](https://github.com/BagelHole/DevOps-Security-Agent-Skills) ·
+[**andreaswasita/copilot-agents-dojo**](https://github.com/andreaswasita/copilot-agents-dojo)
+(the Product Manager's `elicit-requirements` skill behind the interactive `spec` command).
 Add or re-map a shared skill by dropping a `SKILL.md` under `library/_shared/<name>/` and
 listing it in `SHARED_SKILLS` for the characters that need it — no other code change.
 
@@ -281,6 +283,45 @@ Either way the request becomes the same `spec_text` the PM turns into requiremen
 the rest of the pipeline is identical. The intake logic lives in
 `src/software_team/intake.py`.
 
+#### …or have the team write the spec *with* you (`spec`)
+
+If you only have a rough idea — or a rough first draft — let the Product Manager **interview
+you** and write (or improve) the spec file. Give it exactly one input: a `--prompt` to author
+a spec from scratch, or an existing markdown `--spec` to **revise into a better one**:
+
+```bash
+# Author a new spec from a one-line idea:
+uv run software-team spec --prompt "A recipe sharing app"            # asks, then writes spec.md
+uv run software-team spec --prompt "A recipe sharing app" -o specs/recipes.md
+
+# Revise an existing markdown spec into a better one (the input file is left untouched):
+uv run software-team spec --spec draft.md --out better.md
+
+# Non-interactive (CI) or offline:
+uv run software-team spec --prompt "A recipe sharing app" --no-interactive   # use the input alone
+uv run software-team spec --spec draft.md --dry-run                          # offline canned spec
+```
+
+The PM **loads the `elicit-requirements` skill first**, then **talks to you** — a short,
+*bounded conversation* (capped by `SWTEAM_MAX_INTERVIEW_ROUNDS`, default 3): it opens with
+questions about **your needs** (users, must-have features, scope, non-functional
+requirements) and the **technology** to use (language/framework/datastore/deploy target — a
+stated stack is treated as binding; "no preference" is recorded so the Tech Lead chooses),
+then *reads your answers and asks follow-up questions* when something important is still
+missing. In **revise** mode the opening questions are **gap-driven** — it reads your draft and
+asks about its weakest points (vague or untestable requirements, missing NFRs, no stated
+stack, unclear scope). Anything you skip becomes an explicit *open question* rather than a
+silent assumption.
+
+It writes the result to `--out` (default `spec.md`; you choose the file name, and a revised
+spec never overwrites its `--spec` input) with `## Background`, `## Use cases`,
+`## Functional requirements`, `## Non-functional requirements`, `## Technology` and
+`## Out of scope` — feed it straight to `run --spec`. The flow lives in
+`src/software_team/elicit.py`; it falls back to non-interactive generation when there is no
+terminal (CI) so it stays scriptable. The `elicit-requirements` skill is adapted from
+[**andreaswasita/copilot-agents-dojo**](https://github.com/andreaswasita/copilot-agents-dojo)
+(MIT, © 2026 Andreas Wasita).
+
 ### Building new vs. extending existing software
 
 There are two commands, and both accept the same `--spec`/`--prompt` input:
@@ -380,6 +421,8 @@ no-ops, so behaviour (and `--dry-run`) is unchanged.
 - `SWTEAM_MAX_REVIEW_ITERS`, `SWTEAM_MAX_FIX_ITERS` — feedback-loop caps (default 2). The
   graph's `recursion_limit` is derived from these, so raising the caps never aborts a
   healthy run partway with a recursion error.
+- `SWTEAM_MAX_INTERVIEW_ROUNDS` — how many rounds the interactive `spec` interview may run
+  (default 3); each round the agent can ask follow-up questions based on your answers.
 
 ## Design notes
 
@@ -435,6 +478,7 @@ no-ops, so behaviour (and `--dry-run`) is unchanged.
 src/software_team/
   config.py      # LLM provider, per-role model tiers, web search, paths, loop caps
   intake.py      # resolve the feature request from a --spec file or a --prompt
+  elicit.py      # interactive `spec` command: interview the user -> write a spec file
   project.py     # load already-developed software for an incremental `feature` run
   state.py       # TeamState blackboard (build vs. feature mode)
   llm.py         # multi-provider chat-model factory (ollama/openai/anthropic/google/llama_cpp) + dry-run stub

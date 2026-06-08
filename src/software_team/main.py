@@ -1,5 +1,7 @@
 """CLI entrypoint.
 
+    software-team spec --prompt "A recipe sharing app" [--out spec.md]   # interview -> spec file
+    software-team spec --spec draft.md --out better.md                   # revise an existing spec
     software-team run --spec examples/sample_spec.md [--out workspace] [--dry-run]
     software-team run --prompt "Build a URL shortener with click analytics"
     software-team feature --into workspace --prompt "Add task due dates"
@@ -8,7 +10,9 @@
 The team can be handed work in two ways: a written spec **file** (``--spec``) or a
 **prompt** typed directly on the command line (``--prompt``). Exactly one is required.
 ``run`` builds a project from scratch; ``feature`` integrates a new request into a project
-the team has already developed (point ``--into`` at a previous run's workspace).
+the team has already developed (point ``--into`` at a previous run's workspace). ``spec``
+runs a short interactive interview (needs + technology) and writes a spec **file** you can
+then feed to ``run --spec``.
 
 `--dry-run` swaps every LLM for a deterministic stub so the full pipeline and file
 generation can be exercised with no Ollama server running.
@@ -17,13 +21,14 @@ generation can be exercised with no Ollama server running.
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
 
-from . import intake, observability, project
+from . import elicit, intake, observability, project
 from .config import SETTINGS
 from .graph import build_graph
 from .skills.common import filesystem
@@ -172,6 +177,69 @@ def feature(
     final = asyncio.run(build_graph().ainvoke(state, config=config))
 
     _summary(final, target)
+
+
+@app.command()
+def spec(
+    spec: Path | None = typer.Option(
+        None,
+        "--spec",
+        "-s",
+        exists=True,
+        readable=True,
+        help="Existing markdown spec to revise into a better one",
+    ),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="One-line idea to turn into a new spec file"
+    ),
+    out: Path = typer.Option(
+        Path("spec.md"), "--out", "-o", help="Where to write the resulting spec file"
+    ),
+    no_interactive: bool = typer.Option(
+        False, "--no-interactive", help="Skip the interview; use the prompt/spec alone"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Use a canned spec (no model needed)"),
+) -> None:
+    """Write a spec file via a short interview — from a prompt, or by revising an existing spec.
+
+    Provide exactly one input: a one-line ``--prompt`` to author a spec from scratch, or an
+    existing markdown ``--spec`` file to revise into a better one. Either way the Product
+    Manager (loading the ``elicit-requirements`` skill first) *talks to you* — asking about
+    your needs and the technology to use, then following up on your answers — before writing
+    the result to ``--out`` (default ``spec.md``; the input ``--spec`` file is left
+    untouched). Feed the output to ``run --spec`` to build the project.
+    """
+    try:
+        request = intake.resolve(spec, prompt)
+    except intake.IntakeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    mode = elicit.REVISE if request.origin == intake.FILE else elicit.GENERATE
+
+    # Interview only when we can actually read answers: a real terminal, live model, and the
+    # user didn't opt out. Otherwise fall back to using the prompt/spec alone.
+    interactive = not no_interactive and not dry_run and sys.stdin.isatty()
+
+    observability.configure_langsmith()
+    action = "revise" if mode == elicit.REVISE else "spec"
+    console.rule(
+        f"[bold]Software Team · {action}[/bold] · {request.display} · {_mode_banner(dry_run)}"
+    )
+    if interactive:
+        console.print("[dim]The PM will ask a few questions to shape the spec.[/dim]")
+    else:
+        source = "spec" if mode == elicit.REVISE else "prompt"
+        console.print(f"[dim]Non-interactive: working from the {source} alone.[/dim]")
+
+    path, _ = asyncio.run(
+        elicit.generate_spec_file(
+            request.text, out, mode=mode, interactive=interactive, dry_run=dry_run, console=console
+        )
+    )
+
+    console.rule("[bold]Spec written[/bold]")
+    console.print(f"  [green]✓[/green] {path}")
+    console.print(f"\nNext: build it with [bold]software-team run --spec {path}[/bold]")
 
 
 @app.command()

@@ -79,6 +79,8 @@ def _env_bool(name: str, default: bool) -> bool:
 # + tool calling; "narrative" handles planning / design / ops prose. Unknown keys fall
 # back to the narrative tier.
 ROLE_TIERS: dict[str, str] = {
+    # Interactive spec interview (proposes questions + writes the spec) — prose work.
+    "spec_author": "narrative",
     "product_manager": "narrative",
     "ux_designer": "narrative",
     "tech_lead_design": "coder",
@@ -175,6 +177,11 @@ class Settings:
     # --- Loop caps (prevent infinite review / bug-fix loops) ---
     max_review_iters: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_REVIEW_ITERS", 2))
     max_fix_iters: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_FIX_ITERS", 2))
+    # Max rounds of the interactive spec interview (each round the agent may ask follow-up
+    # questions based on the answers so far). Bounds the conversation so it always ends.
+    max_interview_rounds: int = field(
+        default_factory=lambda: _env_int("SWTEAM_MAX_INTERVIEW_ROUNDS", 3)
+    )
 
     # --- LangSmith observability (tracing, named runs, metadata) ---
     # Opt-in. Our ``SWTEAM_LANGSMITH_*`` names win, then the SDK's own ``LANGSMITH_*`` /
