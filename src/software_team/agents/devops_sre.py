@@ -67,7 +67,7 @@ environment variables / CI-CD variables / Jenkins credentials and where they are
 markdown only (no file blocks)."""
 
 
-def devops_ci_node(state: TeamState) -> TeamState:
+async def devops_ci_node(state: TeamState) -> TeamState:
     """Containerise the service and wire up the CI workflow."""
     ui.announce(
         ROLE,
@@ -85,7 +85,7 @@ def devops_ci_node(state: TeamState) -> TeamState:
         ],
     )
     stack = stack_hint(state) or "the application"
-    files = emit_files(
+    files = await emit_files(
         state,
         model_role="devops_ci",
         character=ROLE,
@@ -114,7 +114,7 @@ def devops_ci_node(state: TeamState) -> TeamState:
     }
 
 
-def devops_cd_node(state: TeamState) -> TeamState:
+async def devops_cd_node(state: TeamState) -> TeamState:
     """Set up continuous deployment, IaC, and Kubernetes manifests."""
     ui.announce(
         ROLE,
@@ -129,7 +129,7 @@ def devops_cd_node(state: TeamState) -> TeamState:
             "sbom-supply-chain",
         ],
     )
-    files = emit_files(
+    files = await emit_files(
         state,
         model_role="devops_cd",
         character=ROLE,
@@ -159,7 +159,7 @@ def devops_cd_node(state: TeamState) -> TeamState:
     }
 
 
-def operate_node(state: TeamState) -> TeamState:
+async def operate_node(state: TeamState) -> TeamState:
     """Stand up observability and a runbook, then run a simulated post-deploy health check."""
     ui.announce(
         ROLE,
@@ -167,7 +167,7 @@ def operate_node(state: TeamState) -> TeamState:
         "Standing up monitoring, alerts and a runbook; running a post-deploy health check",
         ["configure-observability", "write-runbook"],
     )
-    files = emit_files(
+    files = await emit_files(
         state,
         model_role="operate",
         character=ROLE,
@@ -213,7 +213,7 @@ def operate_node(state: TeamState) -> TeamState:
     }
 
 
-def devops_docs_node(state: TeamState) -> TeamState:
+async def devops_docs_node(state: TeamState) -> TeamState:
     """Document the infrastructure and run a DevSecOps audit of the deployment artifacts."""
     ui.announce(
         ROLE,
@@ -243,7 +243,7 @@ def devops_docs_node(state: TeamState) -> TeamState:
         f"### Terraform\n{state.get('iac', '')}\n\n"
         f"### Kubernetes\n{state.get('k8s', '')}\n"
     ) + feature_brief(state)
-    doc = generate(
+    doc = await generate(
         "devops_docs",
         with_skills(DOCS_SYSTEM, ROLE),
         user,

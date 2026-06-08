@@ -5,6 +5,7 @@ prompt brief, the dry-run feature variant, and an end-to-end build → feature p
 proves the team integrates a new feature into an existing project without losing it.
 """
 
+import asyncio
 import shutil
 
 import pytest
@@ -138,7 +139,7 @@ def built_workspace(tmp_path_factory):
     base = tmp_path_factory.mktemp("built")
     state = new_state("spec.md", "Build a Task API", str(base))
     state["dry_run"] = True
-    build_graph().invoke(state, config={"recursion_limit": 50})
+    asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 50}))
     return base
 
 
@@ -159,7 +160,7 @@ def feature_run(built_workspace, tmp_path_factory):
         baseline=existing.brief(),
     )
     state["dry_run"] = True
-    final = build_graph().invoke(state, config={"recursion_limit": 50})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 50}))
     return ws, final
 
 

@@ -16,13 +16,14 @@ generation can be exercised with no Ollama server running.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
 
-from . import intake, project
+from . import intake, observability, project
 from .config import SETTINGS
 from .graph import build_graph
 from .skills.common import filesystem
@@ -34,15 +35,21 @@ console = Console()
 
 
 def _mode_banner(dry_run: bool) -> str:
-    """Return the provider/search banner for the run-start rule (or a dry-run tag)."""
+    """Return the provider/search/tracing banner for the run-start rule (or a dry-run tag)."""
+    tracing = (
+        f" tracing=[cyan]langsmith:{SETTINGS.langsmith_project}[/cyan]"
+        if SETTINGS.langsmith_tracing
+        else ""
+    )
     if dry_run:
-        return "[yellow]dry-run[/yellow]"
+        return f"[yellow]dry-run[/yellow]{tracing}"
     search = SETTINGS.search_provider if SETTINGS.search_enabled else "off"
     return (
         f"provider=[cyan]{SETTINGS.llm_provider}[/cyan] "
         f"coder=[cyan]{SETTINGS.coder_model}[/cyan] "
         f"narrative=[cyan]{SETTINGS.narrative_model}[/cyan] "
         f"search=[cyan]{search}[/cyan]"
+        f"{tracing}"
     )
 
 
@@ -77,8 +84,19 @@ def run(
     state = new_state(request.label, request.text, str(out))
     state["dry_run"] = dry_run
 
+    observability.configure_langsmith()
     graph = build_graph()
-    final = graph.invoke(state, config={"recursion_limit": 50})
+    config = observability.run_config(
+        f"software-team:run:{request.label}",
+        tags=["run", request.origin],
+        metadata={
+            "swteam.command": "run",
+            "swteam.origin": request.origin,
+            "swteam.dry_run": dry_run,
+        },
+    )
+    config["recursion_limit"] = SETTINGS.graph_recursion_limit
+    final = asyncio.run(graph.ainvoke(state, config=config))
 
     _summary(final, out)
 
@@ -140,7 +158,18 @@ def feature(
     )
     state["dry_run"] = dry_run
 
-    final = build_graph().invoke(state, config={"recursion_limit": 50})
+    observability.configure_langsmith()
+    config = observability.run_config(
+        f"software-team:feature:{request.label}",
+        tags=["feature", request.origin],
+        metadata={
+            "swteam.command": "feature",
+            "swteam.origin": request.origin,
+            "swteam.dry_run": dry_run,
+        },
+    )
+    config["recursion_limit"] = SETTINGS.graph_recursion_limit
+    final = asyncio.run(build_graph().ainvoke(state, config=config))
 
     _summary(final, target)
 

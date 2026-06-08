@@ -7,6 +7,8 @@ quality gate that can send work back to the engineer.
 
 from __future__ import annotations
 
+import asyncio
+
 from .. import ui
 from ..skills.common import filesystem, shell
 from ..skills.registry import skill_names
@@ -42,7 +44,7 @@ the latest run (pass/fail and how to reproduce it), and the residual risks or ga
 honest about what is untested. Output markdown only."""
 
 
-def qa_planning_node(state: TeamState) -> TeamState:
+async def qa_planning_node(state: TeamState) -> TeamState:
     """Derive a traceable test plan (cases, edge cases, perf sketch) from acceptance criteria."""
     ui.announce(
         ROLE,
@@ -55,7 +57,7 @@ def qa_planning_node(state: TeamState) -> TeamState:
         f"{state.get('acceptance_criteria', '')}\n\n"
         "Sections: ## Test Cases, ## Edge Cases, ## Performance / Load (sketch)."
     ) + feature_brief(state)
-    doc = generate(
+    doc = await generate(
         "qa_planning",
         with_skills(PLAN_SYSTEM, ROLE),
         user,
@@ -69,7 +71,7 @@ def qa_planning_node(state: TeamState) -> TeamState:
     return {"test_plan": doc, "current_phase": "plan"}
 
 
-def qa_test_node(state: TeamState) -> TeamState:
+async def qa_test_node(state: TeamState) -> TeamState:
     """Author E2E tests, run the full suite, and report whether it passed (the quality gate)."""
     ui.announce(
         ROLE,
@@ -87,7 +89,7 @@ def qa_test_node(state: TeamState) -> TeamState:
         f"### Test plan\n{state.get('test_plan', '')}\n\n"
         f"### Files in the project\n{listing}\n"
     ) + feature_brief(state)
-    e2e_files = emit_files(
+    e2e_files = await emit_files(
         state,
         model_role=ROLE,
         character=ROLE,
@@ -100,7 +102,8 @@ def qa_test_node(state: TeamState) -> TeamState:
     )
 
     # 2) Run every component's suite (backend at the root, plus frontend/ when present).
-    outcome = shell.run_test_suites(out)
+    #    Offloaded to a thread so the (blocking) subprocess run never stalls the event loop.
+    outcome = await asyncio.to_thread(shell.run_test_suites, out)
     passed = outcome.passed
     verdict = "[green]passed[/green]" if passed else "[red]failed[/red]"
     ran = ", ".join(run.component for run in outcome.runs) or "none"
@@ -115,7 +118,7 @@ def qa_test_node(state: TeamState) -> TeamState:
     }
 
 
-def qa_report_node(state: TeamState) -> TeamState:
+async def qa_report_node(state: TeamState) -> TeamState:
     """Compile the test report: coverage, the latest run's result, and residual risk."""
     ui.announce(ROLE, "document", "Compiling the test report", ["write-test-report"])
     test_files = "\n".join(path for path in sorted(state.get("source_files", {})) if "test" in path)
@@ -126,7 +129,7 @@ def qa_report_node(state: TeamState) -> TeamState:
         f"### Latest run result (tests_passed={state.get('tests_passed', False)})\n"
         f"{state.get('test_results', '')}\n"
     ) + feature_brief(state)
-    doc = generate(
+    doc = await generate(
         "qa_report",
         with_skills(REPORT_SYSTEM, ROLE),
         user,

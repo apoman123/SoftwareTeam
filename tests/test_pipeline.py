@@ -1,5 +1,7 @@
 """End-to-end smoke tests of the whole graph in dry-run mode."""
 
+import asyncio
+
 from software_team.graph import build_graph
 from software_team.state import new_state
 
@@ -13,7 +15,7 @@ def test_full_pipeline_dry_run(tmp_path):
     state = new_state("spec.md", spec, str(tmp_path))
     state["dry_run"] = True
 
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
 
     # Capability triage routed the full pipeline.
     assert final["needs_frontend"] is True
@@ -78,7 +80,7 @@ def test_pipeline_skips_frontend_and_deployment_for_a_library(tmp_path):
     state = new_state("spec.md", spec, str(tmp_path))
     state["dry_run"] = True
 
-    final = build_graph().invoke(state, config={"recursion_limit": 60})
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 60}))
 
     assert final["needs_frontend"] is False
     assert final["needs_backend"] is True

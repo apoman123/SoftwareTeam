@@ -63,7 +63,7 @@ def _build_research_queries(state: TeamState) -> list[str]:
     ]
 
 
-def software_engineer_node(state: TeamState) -> TeamState:
+async def software_engineer_node(state: TeamState) -> TeamState:
     """Implement the service plus unit tests from the architecture and acceptance criteria."""
     ui.announce(
         ROLE,
@@ -92,7 +92,7 @@ def software_engineer_node(state: TeamState) -> TeamState:
         user += f"\n\n### Address this review feedback\n{state['review_notes']}"
     user += feature_brief(state)
 
-    files = emit_files(
+    files = await emit_files(
         state,
         model_role=ROLE,
         character=ROLE,
@@ -104,7 +104,7 @@ def software_engineer_node(state: TeamState) -> TeamState:
     return {"source_files": files, "unit_tests": unit_tests, "current_phase": "code"}
 
 
-def software_engineer_fix_node(state: TeamState) -> TeamState:
+async def software_engineer_fix_node(state: TeamState) -> TeamState:
     """Read the failing pytest output and re-emit corrected files (bounded hotfix loop)."""
     iters = state.get("fix_iters", 0) + 1
     ui.announce(
@@ -116,7 +116,7 @@ def software_engineer_fix_node(state: TeamState) -> TeamState:
         f"### Current files\n{_code_listing(state.get('source_files', {}))}\n\n"
         f"{FILE_PROTOCOL}"
     )
-    files = emit_files(
+    files = await emit_files(
         state,
         model_role="software_engineer_fix",
         character=ROLE,
@@ -129,7 +129,7 @@ def software_engineer_fix_node(state: TeamState) -> TeamState:
     return {"source_files": files, "fix_iters": iters, "current_phase": "deploy"}
 
 
-def software_engineer_readme_node(state: TeamState) -> TeamState:
+async def software_engineer_readme_node(state: TeamState) -> TeamState:
     """Write the repository README: purpose, local setup, run instructions, and API usage."""
     ui.announce(ROLE, "document", "Writing the repository README", ["write-readme"])
     files = state.get("source_files", {})
@@ -153,7 +153,7 @@ def software_engineer_readme_node(state: TeamState) -> TeamState:
         f"### Project files\n{listing}\n\n"
         f"{manifest}"
     ) + feature_brief(state)
-    doc = generate(
+    doc = await generate(
         "software_engineer_readme",
         with_skills(README_SYSTEM, ROLE),
         user,

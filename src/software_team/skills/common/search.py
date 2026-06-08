@@ -18,11 +18,21 @@ just because the network is down. It is also a no-op in ``--dry-run``.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 from langchain_core.tools import tool
 
 from ...config import SETTINGS
+
+# Process-wide cache of search digests, keyed by (provider, query, limit). Many characters
+# issue near-identical queries (e.g. "<stack> best practices 2026") across a single run, and
+# the review/bug-fix loops re-issue theirs each iteration. Caching makes every repeat a hit —
+# no duplicate network round-trips — which both speeds up the run and keeps results stable.
+# Empty results are cached too, so a failing/blocked query is not retried all run. The cache
+# is per-process and lives only for the run; restart the CLI to refresh.
+_CACHE: dict[tuple[str, str, int], str] = {}
+_CACHE_LOCK = threading.Lock()
 
 
 @dataclass
@@ -51,13 +61,21 @@ def web_search(query: str, max_results: int | None = None) -> str:
 
     limit = max_results or SETTINGS.search_max_results
     provider = SETTINGS.search_provider
+    key = (provider, query.lower(), limit)
+    with _CACHE_LOCK:
+        if key in _CACHE:
+            return _CACHE[key]
+
     try:
         # duckduckgo is the default and the fallback for any unknown provider value.
         results = _tavily(query, limit) if provider == "tavily" else _duckduckgo(query, limit)
+        digest = "\n".join(hit.render() for hit in results[:limit])
     except Exception:  # noqa: BLE001 - best-effort: never break a run on search failure
-        return ""
+        digest = ""
 
-    return "\n".join(hit.render() for hit in results[:limit])
+    with _CACHE_LOCK:
+        _CACHE[key] = digest
+    return digest
 
 
 def _duckduckgo(query: str, limit: int) -> list[SearchResult]:

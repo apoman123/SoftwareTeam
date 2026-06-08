@@ -9,18 +9,27 @@ so every character behaves consistently and stays dry-run aware.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from pathlib import Path
+from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from .. import ui
+from .. import observability, ui
 from ..llm import build_llm
 from ..skills.common import filesystem, search
 from ..skills.common.authoring import parse_file_blocks
 from ..skills.registry import guidance_for
 from ..state import FEATURE_MODE, TeamState
+
+# Per-query and total caps (characters) on the web-research block folded into a prompt.
+# Prompt-processing (prefill) is the dominant cost on a local CPU-offloaded model, and it
+# grows with every token of context, so an unbounded pile of search snippets slows *every*
+# turn. Bounding the research keeps the grounding useful while protecting prefill latency.
+_RESEARCH_PER_QUERY_CHARS = 1200
+_RESEARCH_TOTAL_CHARS = 4000
 
 
 def with_skills(persona: str, character: str) -> str:
@@ -155,8 +164,15 @@ def stack_hint(state: TeamState) -> str:
     return _requested_stack(state)
 
 
-def research(state: TeamState, queries: list[str]) -> str:
-    """Fetch the latest info from the web for ``queries`` and return a context block.
+@observability.traceable(run_type="tool", name="web_research")
+async def research(state: TeamState, queries: list[str]) -> str:
+    """Fetch the latest info from the web for ``queries`` concurrently and return a block.
+
+    The queries are independent network calls, so they run in parallel (each blocking
+    ``web_search`` is dispatched to a worker thread and awaited together) instead of one
+    after another — the research step then takes about as long as its slowest query, not
+    their sum. Each digest is truncated and the whole block is capped (see the module
+    constants) to keep prefill fast on a local model.
 
     Best-effort and side-effect free for the run: a no-op in dry-run or when search is
     disabled, and silent on any backend/network failure. The returned text is meant to be
@@ -167,16 +183,25 @@ def research(state: TeamState, queries: list[str]) -> str:
         queries: The search queries to run.
 
     Returns:
-        A formatted block of search digests, or an empty string when nothing is found.
+        A formatted, size-bounded block of search digests, or "" when nothing is found.
     """
     if state.get("dry_run") or not queries:
         return ""
 
+    digests = await asyncio.gather(*(asyncio.to_thread(search.web_search, q) for q in queries))
+
     blocks: list[str] = []
-    for query in queries:
-        digest = search.web_search(query)
-        if digest:
-            blocks.append(f"#### Results for: {query}\n{digest}")
+    used = 0
+    for query, digest in zip(queries, digests, strict=True):
+        if not digest:
+            continue
+        digest = digest[:_RESEARCH_PER_QUERY_CHARS]
+        if used + len(digest) > _RESEARCH_TOTAL_CHARS:
+            digest = digest[: _RESEARCH_TOTAL_CHARS - used]
+        if not digest:
+            break
+        blocks.append(f"#### Results for: {query}\n{digest}")
+        used += len(digest)
     if not blocks:
         return ""
 
@@ -184,17 +209,21 @@ def research(state: TeamState, queries: list[str]) -> str:
     return "\n\n".join(blocks)
 
 
-def generate(
+async def generate(
     role: str,
     system_prompt: str,
     user_prompt: str,
     state: TeamState,
     research_queries: list[str] | None = None,
 ) -> str:
-    """Run one LLM turn for ``role`` and return its text content.
+    """Run one async LLM turn for ``role`` and return its text content.
 
-    When ``research_queries`` are given (and not in dry-run), the latest matching web
-    results are folded into the prompt so the character can use current information.
+    The turn is awaited (``astream``/``ainvoke``), so a node never blocks the event loop
+    while the model works — on a tool-calling backend that supports concurrency the team can
+    overlap independent calls. When ``research_queries`` are given (and not in dry-run), the
+    latest matching web results are gathered concurrently and folded into the prompt so the
+    character can use current information. The turn is named/tagged for LangSmith so it shows
+    up per character in the trace.
 
     Args:
         role: The tier key that selects the model (e.g. "software_engineer").
@@ -206,7 +235,7 @@ def generate(
     Returns:
         The model's response text.
     """
-    findings = research(state, research_queries or [])
+    findings = await research(state, research_queries or [])
     if findings:
         user_prompt = (
             f"{user_prompt}\n\n"
@@ -220,13 +249,93 @@ def generate(
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
     ]
+    config = observability.run_config(
+        role,
+        tags=[role, state.get("current_phase", "")],
+        metadata={
+            "swteam.role": role,
+            "swteam.phase": state.get("current_phase", ""),
+            "swteam.mode": state.get("mode", "build"),
+        },
+    )
+    return await _arun_turn(llm, messages, dry_run=state.get("dry_run", False), config=config)
+
+
+def _content_text(content: Any) -> str:
+    """Flatten an LLM message/chunk ``content`` into plain text.
+
+    Providers return ``content`` as a string, or as a list of content blocks (e.g. dicts
+    carrying a ``text`` field — Anthropic does this while streaming). Normalise both to one
+    string so the rest of the pipeline always works with text.
+
+    Args:
+        content: A message/chunk ``content`` (str, list of blocks, or other).
+
+    Returns:
+        The concatenated text, or "" when there is none.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(str(block.get("text") or block.get("content") or ""))
+        return "".join(parts)
+    return "" if content is None else str(content)
+
+
+async def _arun_turn(
+    llm: Any, messages: list[BaseMessage], *, dry_run: bool, config: dict[str, Any] | None = None
+) -> str:
+    """Execute one async chat turn, streaming the response unless in dry-run.
+
+    Streaming is what keeps the run from *looking* idle on a slow local model: tokens are
+    rendered as they arrive (continuous progress instead of a multi-minute silent block),
+    and the HTTP read-timeout then bounds the gap *between* tokens rather than the whole
+    response — so a slow but healthy generation no longer trips the deadline (only a truly
+    wedged server does, after the timeout's worth of silence). Awaiting ``astream`` also
+    frees the event loop between tokens. Falls back to a single ``ainvoke`` if the model
+    cannot stream; the dry-run stub is synchronous and offline, so it just invokes.
+
+    Args:
+        llm: The chat model (a real provider client, or the dry-run stub).
+        messages: The system + human messages for the turn.
+        dry_run: Whether this is a dry run (skip streaming and the live progress display).
+        config: Optional LangSmith run config (run name / tags / metadata) for the call.
+
+    Returns:
+        The model's full response text.
+    """
+    if not dry_run:
+        try:
+            pieces: list[str] = []
+            chars = 0
+            with ui.generating() as progress:
+                async for chunk in llm.astream(messages, config=config):
+                    piece = _content_text(getattr(chunk, "content", ""))
+                    if not piece:
+                        continue
+                    pieces.append(piece)
+                    chars += len(piece)
+                    progress(chars)
+            if pieces:
+                return "".join(pieces)
+            # An empty stream (rare; some OpenAI-compatible shims) — fall through to invoke.
+        except (NotImplementedError, AttributeError):
+            # Model doesn't support streaming — fall back to one blocking call.
+            pass
+        response = await llm.ainvoke(messages, config=config)
+        return _content_text(getattr(response, "content", response))
+
+    # Dry-run stub: synchronous, offline, instant — no streaming display needed.
     response = llm.invoke(messages)
-    if isinstance(response, AIMessage):
-        return response.content if isinstance(response.content, str) else str(response.content)
-    return getattr(response, "content", str(response))
+    return _content_text(getattr(response, "content", response))
 
 
-def emit_files(
+async def emit_files(
     state: TeamState,
     *,
     model_role: str,
@@ -252,7 +361,7 @@ def emit_files(
         A ``{relative_path: content}`` map of the files written; empty when the model
         emitted no file blocks.
     """
-    text = generate(
+    text = await generate(
         model_role,
         with_skills(system_prompt, character),
         user_prompt,

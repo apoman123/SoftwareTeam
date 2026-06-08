@@ -7,12 +7,12 @@ LLAMA_SERVER="${LLAMA_SERVER:-/home/apoman123/llama.cpp/build/bin/llama-server}"
 GGUF_DIR="/home/apomam123/SoftwareTeam/ggufs"
 
 # Model to serve. Override with: MODEL=...IQ4_NL.gguf ./serve-llama.sh
-MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf}"
-# MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ2_M.gguf}"
+# MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf}"
+MODEL="${MODEL:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ2_M.gguf}"
 
 # The id opencode sends in requests; must match the model key in opencode.jsonc.
-ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M}"
-# ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ2_M}"
+# ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M}"
+ALIAS="${ALIAS:-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ2_M}"
 
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8090}"

@@ -68,6 +68,13 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 # Each graph node ("task role") is mapped to a model "tier". "coder" needs strong code
 # + tool calling; "narrative" handles planning / design / ops prose. Unknown keys fall
 # back to the narrative tier.
@@ -133,8 +140,10 @@ class Settings:
     # the full context window, which looks like the run "hanging". Bounds every turn so it
     # always terminates; raise it for code-heavy runs that legitimately emit large files.
     max_tokens: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_TOKENS", 8192))
-    # Per-request timeout (seconds). A wedged or OOM-killed local server otherwise leaves the
-    # client blocked forever; with this the call fails fast instead of stalling the workflow.
+    # Per-request timeout (seconds). Turns serve as an inactivity deadline: because nodes
+    # stream the response, this bounds the gap *between* tokens, not the whole generation —
+    # so a slow but healthy local model keeps running while a wedged/OOM-killed server, which
+    # goes silent, fails fast instead of leaving the client blocked forever.
     request_timeout: float = field(
         default_factory=lambda: _env_float("SWTEAM_REQUEST_TIMEOUT", 600.0)
     )
@@ -167,6 +176,33 @@ class Settings:
     max_review_iters: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_REVIEW_ITERS", 2))
     max_fix_iters: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_FIX_ITERS", 2))
 
+    # --- LangSmith observability (tracing, named runs, metadata) ---
+    # Opt-in. Our ``SWTEAM_LANGSMITH_*`` names win, then the SDK's own ``LANGSMITH_*`` /
+    # legacy ``LANGCHAIN_*`` env vars, so either configuration style works. When on,
+    # ``observability.configure_langsmith`` exports the canonical vars the SDK reads.
+    langsmith_tracing: bool = field(
+        default_factory=lambda: _env_bool(
+            "SWTEAM_LANGSMITH_TRACING",
+            _env_bool("LANGSMITH_TRACING", _env_bool("LANGCHAIN_TRACING_V2", False)),
+        )
+    )
+    langsmith_api_key: str = field(
+        default_factory=lambda: _env(
+            "SWTEAM_LANGSMITH_API_KEY", _env("LANGSMITH_API_KEY", _env("LANGCHAIN_API_KEY", ""))
+        )
+    )
+    langsmith_project: str = field(
+        default_factory=lambda: _env(
+            "SWTEAM_LANGSMITH_PROJECT",
+            _env("LANGSMITH_PROJECT", _env("LANGCHAIN_PROJECT", "software-team")),
+        )
+    )
+    langsmith_endpoint: str = field(
+        default_factory=lambda: _env(
+            "SWTEAM_LANGSMITH_ENDPOINT", _env("LANGSMITH_ENDPOINT", _env("LANGCHAIN_ENDPOINT", ""))
+        )
+    )
+
     def model_for(self, role: str) -> str:
         """Return the model name for ``role`` based on its tier (coder vs narrative)."""
         tier = ROLE_TIERS.get(role, "narrative")
@@ -176,6 +212,21 @@ class Settings:
     def search_enabled(self) -> bool:
         """Return whether web search is configured (not disabled/off/none)."""
         return self.search_provider not in ("", "none", "off", "disabled")
+
+    @property
+    def graph_recursion_limit(self) -> int:
+        """A LangGraph superstep budget that scales with the feedback-loop caps.
+
+        The review loop re-runs build -> (frontend) -> review and the fix loop re-runs
+        test -> fix, so raising ``SWTEAM_MAX_REVIEW_ITERS`` / ``SWTEAM_MAX_FIX_ITERS`` can
+        push the worst-case path past a fixed budget and abort a *healthy* run partway with
+        a recursion error. Derive the limit from the caps (plus headroom for the fixed
+        plan/deploy/document phases) so turning the caps up never starves the graph.
+
+        Returns:
+            The recursion limit to pass to ``graph.invoke``.
+        """
+        return 40 + self.max_review_iters * 4 + self.max_fix_iters * 3
 
 
 def repo_root() -> Path:

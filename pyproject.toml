@@ -41,6 +41,11 @@ search = [
 tavily = [
     "tavily-python>=0.5",
 ]
+# LangSmith observability (tracing, named runs, datasets/evals). langsmith already ships
+# with langchain; this pins it explicitly for anyone enabling SWTEAM_LANGSMITH_TRACING.
+langsmith = [
+    "langsmith>=0.1",
+]
 
 [project.scripts]
 software-team = "software_team.main:app"

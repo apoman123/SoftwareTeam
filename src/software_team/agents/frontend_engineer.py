@@ -30,7 +30,7 @@ responsive screens that match the UX and call the backend API; keep components s
 state handling clear. {FILE_PROTOCOL}"""
 
 
-def frontend_engineer_node(state: TeamState) -> TeamState:
+async def frontend_engineer_node(state: TeamState) -> TeamState:
     """Implement the frontend (under ``frontend/``) from the UX and the API contract.
 
     Reached only when ``needs_frontend`` is set, so pure API/backend or library projects
@@ -67,7 +67,7 @@ def frontend_engineer_node(state: TeamState) -> TeamState:
         )
     user += feature_brief(state)
 
-    files = emit_files(
+    files = await emit_files(
         state,
         model_role=ROLE,
         character=SKILLS_CHARACTER,

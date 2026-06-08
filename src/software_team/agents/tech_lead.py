@@ -38,7 +38,7 @@ response with exactly one line 'REVIEW_STATUS: approve' or 'REVIEW_STATUS: chang
 then bullet-point findings. Approve unless there is a real defect."""
 
 
-def tech_lead_design_node(state: TeamState) -> TeamState:
+async def tech_lead_design_node(state: TeamState) -> TeamState:
     """Select the stack and design the architecture, OpenAPI contract, and DB schema."""
     ui.announce(
         ROLE,
@@ -65,7 +65,7 @@ def tech_lead_design_node(state: TeamState) -> TeamState:
         "the equivalent for the chosen datastore)."
     ) + feature_brief(state)
     target = requested or "the most suitable backend language and web framework"
-    doc = generate(
+    doc = await generate(
         "tech_lead_design",
         with_skills(DESIGN_SYSTEM, ROLE),
         user,
@@ -95,7 +95,7 @@ def tech_lead_design_node(state: TeamState) -> TeamState:
     }
 
 
-def tech_lead_review_node(state: TeamState) -> TeamState:
+async def tech_lead_review_node(state: TeamState) -> TeamState:
     """Review the engineer's code and record an approve/changes verdict (bounded by a cap)."""
     iters = state.get("review_iters", 0) + 1
     ui.announce(ROLE, "code", f"Code review (pass {iters})", ["review-code", "route-workflow"])
@@ -106,7 +106,7 @@ def tech_lead_review_node(state: TeamState) -> TeamState:
         f"### Acceptance Criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"### Code\n{listing}\n"
     ) + feature_brief(state)
-    verdict = generate(
+    verdict = await generate(
         "tech_lead_review",
         with_skills(REVIEW_SYSTEM, ROLE),
         user,

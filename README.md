@@ -30,6 +30,11 @@ Highlights:
   lifecycle so the change is reviewed, regression-tested, redeployed, and documented.
 - **Runs offline.** A `--dry-run` mode produces a complete, test-passing example with no
   model server, provider package, or network at all.
+- **Async & observable.** Every character infers asynchronously (`astream`/`ainvoke`) and
+  the graph is driven with `ainvoke`, so a node streams its output live (no more silent,
+  idle-looking turns) and never blocks the event loop; each node's web-research queries run
+  concurrently. Turn on **LangSmith** with one env var to trace every run — the graph, each
+  character's named/tagged LLM call, and the research step.
 
 ## The characters and their skills
 
@@ -349,10 +354,32 @@ Copy `.env.example` and adjust. Key variables:
 - `SWTEAM_SEARCH_MAX_RESULTS` — results per query (default 4). Search is skipped in
   `--dry-run` and fails soft (no network or package → the run continues without it).
 
+**Observability (LangSmith)**
+
+Tracing is opt-in and turn-key — set one flag and a key (`uv sync --extra langsmith`; the
+package also ships with LangChain):
+
+- `SWTEAM_LANGSMITH_TRACING` — `true` to trace the run (default `false`).
+- `SWTEAM_LANGSMITH_API_KEY` — your LangSmith key.
+- `SWTEAM_LANGSMITH_PROJECT` — the project traces land in (default `software-team`).
+- `SWTEAM_LANGSMITH_ENDPOINT` — optional, for the EU or a self-hosted instance.
+
+When on, `software_team/observability.py` exports the canonical `LANGSMITH_*` / legacy
+`LANGCHAIN_*` variables the SDK reads, so the whole pipeline is traced with no per-call
+code: the **graph run** (named `software-team:run:<label>`), **each character's streamed LLM
+call** (named and tagged by role + phase, with role/mode/provider metadata), and the
+**web-research** step (a child `tool` run). That populates the trace tree LangSmith's other
+features build on — run inspection, monitoring/dashboards, datasets and offline evaluation,
+and human feedback/annotation. The SDK's own `LANGSMITH_*`/`LANGCHAIN_*` env vars are also
+honoured if you prefer to configure it that way. With tracing off, the helpers are cheap
+no-ops, so behaviour (and `--dry-run`) is unchanged.
+
 **Other**
 
 - `SWTEAM_TEMPERATURE` — generation temperature (default 0.2).
-- `SWTEAM_MAX_REVIEW_ITERS`, `SWTEAM_MAX_FIX_ITERS` — feedback-loop caps (default 2).
+- `SWTEAM_MAX_REVIEW_ITERS`, `SWTEAM_MAX_FIX_ITERS` — feedback-loop caps (default 2). The
+  graph's `recursion_limit` is derived from these, so raising the caps never aborts a
+  healthy run partway with a recursion error.
 
 ## Design notes
 
@@ -360,6 +387,19 @@ Copy `.env.example` and adjust. Key variables:
   calling, so the pipeline doesn't depend on it: each character makes a single
   structured generation, and Python *skill functions* persist artifacts and run
   commands. Tool-backed skills are still bound for the SWE/QA loop on capable models.
+- **Async, streamed inference.** Every node is an `async` graph node and the graph runs via
+  `ainvoke`; each character's single generation is awaited and **streamed** (`astream`, with
+  an `ainvoke` fallback). Streaming keeps the run from *looking* idle on a slow local model —
+  tokens render as they arrive — and turns the request timeout into a per-token *inactivity*
+  deadline, so a slow-but-healthy generation no longer trips it. The blocking test-suite run
+  is off-loaded to a worker thread so it never stalls the event loop.
+- **Built to run faster.** The dominant cost on a local CPU-offloaded model is prompt
+  prefill, so the pipeline keeps prompts lean and avoids repeat work: each node's web-search
+  queries run **concurrently** (the research step takes as long as its slowest query, not
+  their sum), results are **cached per run** (the review/bug-fix loops and the many shared
+  "latest <stack> …" queries become cache hits — no duplicate round-trips), and the research
+  block folded into a prompt is **size-bounded** so grounding never bloats prefill. On a
+  cloud backend the async design also lets independent calls overlap.
 - **Stack-agnostic by design.** The team honours whatever language/framework the spec
   asks for: the Tech Lead treats a stated stack as a binding constraint (and the raw spec
   reaches it, so the request is never lost), every node grounds its prompts and research in
@@ -398,6 +438,7 @@ src/software_team/
   project.py     # load already-developed software for an incremental `feature` run
   state.py       # TeamState blackboard (build vs. feature mode)
   llm.py         # multi-provider chat-model factory (ollama/openai/anthropic/google/llama_cpp) + dry-run stub
+  observability.py # LangSmith wiring: enable tracing, name/tag runs, @traceable steps
   dryrun.py      # canned artifacts for --dry-run
   ui.py          # console reporting
   skills/        # SKILL.md library (loader, registry, common tools incl. web search + security-audit engine)

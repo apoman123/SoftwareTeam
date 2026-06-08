@@ -26,7 +26,7 @@ copy. If the product is an API or backend service, keep the UX minimal: describe
 primary user journey and a small reference client. Output markdown only."""
 
 
-def ux_designer_node(state: TeamState) -> TeamState:
+async def ux_designer_node(state: TeamState) -> TeamState:
     """Describe the user flow, screen layouts, and component/state specs for the Tech Lead.
 
     Works from the PM's user stories and writes a written UX description (no drawings) to
@@ -60,7 +60,7 @@ def ux_designer_node(state: TeamState) -> TeamState:
         "## Usability & Accessibility Notes (Nielsen heuristics, WCAG POUR, and the key "
         "UI quality checks)\n"
     ) + feature_brief(state)
-    doc = generate(
+    doc = await generate(
         ROLE,
         with_skills(SYSTEM, ROLE),
         user,

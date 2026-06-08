@@ -29,7 +29,7 @@ Notes grouped as Added / Changed / Fixed. Use a top-level '## Release Notes' hea
 the release-notes section. Output GitHub-flavoured markdown only."""
 
 
-def product_manager_node(state: TeamState) -> TeamState:
+async def product_manager_node(state: TeamState) -> TeamState:
     """Turn the spec into user stories, Gherkin acceptance criteria, and a MoSCoW backlog."""
     ui.announce(
         ROLE,
@@ -46,7 +46,7 @@ def product_manager_node(state: TeamState) -> TeamState:
         "## Acceptance Criteria (Gherkin) with a ```gherkin block\n"
         "## Prioritised Backlog (MoSCoW)\n"
     ) + feature_brief(state)
-    doc = generate(
+    doc = await generate(
         ROLE,
         with_skills(SYSTEM, ROLE),
         user,
@@ -67,7 +67,7 @@ def product_manager_node(state: TeamState) -> TeamState:
     }
 
 
-def product_manager_docs_node(state: TeamState) -> TeamState:
+async def product_manager_docs_node(state: TeamState) -> TeamState:
     """Turn the shipped features into an end-user manual and release notes."""
     ui.announce(
         ROLE,
@@ -83,7 +83,7 @@ def product_manager_docs_node(state: TeamState) -> TeamState:
         f"### Acceptance criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"### API surface\n{state.get('api_spec', '')}\n"
     ) + feature_brief(state)
-    doc = generate(
+    doc = await generate(
         "product_manager_docs",
         with_skills(DOCS_SYSTEM, ROLE),
         user,
