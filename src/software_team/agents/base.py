@@ -120,12 +120,36 @@ _KNOWN_TECH: tuple[str, ...] = (
 )
 
 
+def detect_stack(text: str) -> str:
+    """Detect any known language/framework named in free-text.
+
+    Scans ``text`` case-insensitively for the technologies in ``_KNOWN_TECH`` so a stated
+    constraint such as "use Node.js" can be picked up wherever it appears — a spec, the PM's
+    stories, or a stakeholder's interview answer. Matches whole tokens so "go" is not found
+    inside "goal".
+
+    Args:
+        text: Free-text to scan (e.g. a spec, user stories, or interview answers).
+
+    Returns:
+        The recognised technologies, space-joined in first-seen order, or "" if none.
+    """
+    lowered = text.lower()
+    found: list[str] = []
+    for tech in _KNOWN_TECH:
+        # Bound by alphanumerics only so "go" is not found inside "goal"/"google" but a
+        # token at a sentence end ("Express.") or before punctuation still matches.
+        pattern = rf"(?<![a-z0-9]){re.escape(tech)}(?![a-z0-9])"
+        if tech not in found and re.search(pattern, lowered):
+            found.append(tech)
+    return " ".join(found)
+
+
 def _requested_stack(state: TeamState) -> str:
     """Detect any language/framework the stakeholder named in the spec or stories.
 
-    Scans the raw spec and the PM's stories (case-insensitively) for known technologies so
-    a stated constraint such as "use Node.js" survives even before the Tech Lead has picked
-    a stack. Matches whole tokens so "go" is not found inside "goal".
+    A stated constraint such as "use Node.js" then survives even before the Tech Lead has
+    picked a stack.
 
     Args:
         state: The shared team state (reads ``spec_text`` then ``user_stories``).
@@ -133,15 +157,7 @@ def _requested_stack(state: TeamState) -> str:
     Returns:
         The recognised technologies, space-joined in first-seen order, or "" if none.
     """
-    text = f"{state.get('spec_text', '')}\n{state.get('user_stories', '')}".lower()
-    found: list[str] = []
-    for tech in _KNOWN_TECH:
-        # Bound by alphanumerics only so "go" is not found inside "goal"/"google" but a
-        # token at a sentence end ("Express.") or before punctuation still matches.
-        pattern = rf"(?<![a-z0-9]){re.escape(tech)}(?![a-z0-9])"
-        if tech not in found and re.search(pattern, text):
-            found.append(tech)
-    return " ".join(found)
+    return detect_stack(f"{state.get('spec_text', '')}\n{state.get('user_stories', '')}")
 
 
 def stack_hint(state: TeamState) -> str:

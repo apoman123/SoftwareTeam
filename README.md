@@ -44,7 +44,7 @@ catalogue.
 
 | Character | Phase focus | Skills |
 |-----------|-------------|--------|
-| 🧭 **Product Manager** | Plan + Document | `elicit-requirements`, `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics`, `write-user-manual` |
+| 🧭 **Product Manager** | Plan + Document | `elicit-requirements`, `research-the-market`, `parse-spec`, `write-user-stories`, `define-acceptance-criteria`, `prioritize-backlog`, `track-metrics`, `write-user-manual` |
 | 🎨 **UI/UX Designer** | Plan | `map-user-flow`, `describe-ui-layout`, `specify-components`, `apply-usability-heuristics`, `apply-ui-quality-checklist`, `ensure-accessibility` |
 | 🧠 **Tech Lead / Architect** | Plan + supervise | `select-tech-stack`, `design-architecture`, `define-api-spec`, `design-db-schema`, `write-adr`, `review-code`, `route-workflow` |
 | 💻 **Software Engineer** | Code + Operate + Document | `scaffold-project`, `write-code`, `write-unit-tests`, `run-tests`, `fix-bug`, `manage-version-control`, `write-readme` |
@@ -302,7 +302,8 @@ uv run software-team spec --prompt "A recipe sharing app" --no-interactive   # u
 uv run software-team spec --spec draft.md --dry-run                          # offline canned spec
 ```
 
-The PM **loads the `elicit-requirements` skill first**, then **talks to you** — a short,
+The PM **loads the `elicit-requirements` and `research-the-market` skills first**, then
+**talks to you** — a short,
 *bounded conversation* (capped by `SWTEAM_MAX_INTERVIEW_ROUNDS`, default 3): it opens with
 questions about **your needs** (users, must-have features, scope, non-functional
 requirements) and the **technology** to use (language/framework/datastore/deploy target — a
@@ -312,6 +313,13 @@ missing. In **revise** mode the opening questions are **gap-driven** — it read
 asks about its weakest points (vague or untestable requirements, missing NFRs, no stated
 stack, unclear scope). Anything you skip becomes an explicit *open question* rather than a
 silent assumption.
+
+Before writing, it **searches the web** (via the `research-the-market` skill) to ground the
+spec in current facts — today's stable version of the requested stack (or, when you state no
+preference, the technologies teams actually reach for now), plus any domain/compliance
+considerations — so the `## Technology` section is not built on the local model's stale
+training data. The search is best-effort: if the network is unavailable it simply writes the
+spec without it.
 
 It writes the result to `--out` (default `spec.md`; you choose the file name, and a revised
 spec never overwrites its `--spec` input) with `## Background`, `## Use cases`,

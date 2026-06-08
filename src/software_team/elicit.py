@@ -10,10 +10,13 @@ third, *assisted* path the ``spec`` command drives. It works two ways:
 Either way the Product Manager **talks to the user**: it runs a short, bounded *conversation*
 — asking about the details of the user's needs and the technology to use, then reading the
 answers and asking follow-up questions when something important is still missing — before
-writing the spec. It loads the ``elicit-requirements`` skill (a structured
-requirements-elicitation pipeline) *before* writing, so the interview and the document follow
-real practice (problem before solution, testable requirements, the stack captured explicitly,
-ambiguities flagged rather than assumed).
+writing the spec. It loads two skills *before* writing: ``elicit-requirements`` (a structured
+requirements-elicitation pipeline) so the interview and the document follow real practice
+(problem before solution, testable requirements, the stack captured explicitly, ambiguities
+flagged rather than assumed), and ``research-the-market`` — backed by web search — so the
+spec is grounded in current facts (today's stable version of the requested stack, recommended
+options when the user has no preference, domain/compliance considerations) rather than the
+local model's stale training data. The web search is best-effort and a no-op offline.
 
 In ``--dry-run`` or when not attached to a terminal it skips the interactive prompts and
 produces a spec deterministically/offline, so the command stays scriptable in CI.
@@ -21,6 +24,7 @@ produces a spec deterministically/offline, so the command stays scriptable in CI
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -35,10 +39,12 @@ from .state import TeamState
 GENERATE = "generate"  # write a new spec from a prompt
 REVISE = "revise"  # improve an existing spec file
 
-# The skill loaded before the spec is written (a structured requirements-elicitation
-# pipeline). It lives in the Product Manager's library and is composed into the system prompt
-# for the authoring step, so the interview and the spec follow its method.
+# The skills loaded before the spec is written, both from the Product Manager's library and
+# composed into the system prompt for the authoring step: ``elicit-requirements`` (a
+# structured requirements-elicitation pipeline) so the interview and the spec follow its
+# method, and ``research-the-market`` so the agent grounds the spec in current web facts.
 ELICIT_SKILL = "elicit-requirements"
+RESEARCH_SKILL = "research-the-market"
 ELICIT_CHARACTER = "product_manager"
 
 # The model "role" (narrative tier) used for proposing questions and writing/revising specs.
@@ -129,16 +135,69 @@ def _render_qa(qa: list[tuple[str, str]]) -> str:
     return "\n".join(f"- **{question}** {answer}" for question, answer in qa) or "(none)"
 
 
-def _system_with_elicit(base_system: str) -> str:
-    """Compose ``base_system`` with the ``elicit-requirements`` skill guidance, if present.
+def _authoring_system(base_system: str) -> str:
+    """Compose ``base_system`` with the spec-authoring skills' guidance, if present.
 
-    This is what "loads the skill before generating the spec": the skill's body is folded
-    into the system prompt used for the authoring/revision turn.
+    This is what "loads the skills before generating the spec": the bodies of
+    ``elicit-requirements`` (the interview/spec method) and ``research-the-market`` (ground
+    the spec in current web facts) are folded into the system prompt used for the
+    authoring/revision turn.
     """
-    guidance = skill_guidance(ELICIT_CHARACTER, ELICIT_SKILL)
+    bodies = [skill_guidance(ELICIT_CHARACTER, skill) for skill in (ELICIT_SKILL, RESEARCH_SKILL)]
+    guidance = "\n\n".join(body for body in bodies if body)
     if guidance:
-        return f"{base_system}\n\nApply this skill and the method behind it:\n{guidance}"
+        return f"{base_system}\n\nApply these skills and the method behind them:\n{guidance}"
     return base_system
+
+
+def _spec_topic(source_text: str) -> str:
+    """Extract a short topic label from the idea (generate) or the spec title (revise).
+
+    Args:
+        source_text: The one-line idea, or the existing spec markdown.
+
+    Returns:
+        The first meaningful line (a leading ``# Spec:`` title is unwrapped), capped to a
+        short length suitable for a search query, or "" when nothing usable is found.
+    """
+    for raw in source_text.splitlines():
+        line = raw.strip().lstrip("#").strip()
+        if not line:
+            continue
+        if line.lower().startswith("spec:"):
+            line = line[len("spec:") :].strip()
+        return line[:80]
+    return ""
+
+
+def _research_queries(source_text: str, qa: list[tuple[str, str]]) -> list[str]:
+    """Build up to two web queries to ground the spec in current facts.
+
+    The Product Manager searches the internet before writing so the Technology section and
+    any best practices reflect today's reality rather than the local model's stale training
+    data. Queries are derived from the idea/spec *and* the interview answers — the
+    stakeholder may name the technology only in an answer. Best-effort: ``base.generate``
+    ignores these in dry-run or when web search is disabled.
+
+    Args:
+        source_text: The one-line idea (generate) or the existing spec (revise).
+        qa: The collected ``(question, answer)`` interview pairs.
+
+    Returns:
+        Up to two search queries, or an empty list when there is nothing to ground on.
+    """
+    answers = " ".join(answer for _, answer in qa if answer and answer != _UNANSWERED)
+    stack = base.detect_stack(f"{source_text}\n{answers}")
+    topic = _spec_topic(source_text)
+    year = datetime.date.today().year
+    queries: list[str] = []
+    if stack:
+        queries.append(f"{stack} latest stable version and best practices {year}")
+    elif topic:
+        queries.append(f"recommended technology stack for {topic} {year}")
+    if topic:
+        queries.append(f"{topic} requirements and compliance considerations")
+    return queries[:2]
 
 
 async def _seed_questions(source_text: str, *, mode: str, state: TeamState) -> list[str]:
@@ -285,7 +344,13 @@ async def author_spec(prompt: str, qa: list[tuple[str, str]], state: TeamState) 
         f"### Initial request\n{prompt}\n\n"
         f"### Interview answers\n{_render_qa(qa)}\n"
     )
-    return await base.generate(ROLE, _system_with_elicit(SPEC_SYSTEM), user, state)
+    return await base.generate(
+        ROLE,
+        _authoring_system(SPEC_SYSTEM),
+        user,
+        state,
+        research_queries=_research_queries(prompt, qa),
+    )
 
 
 async def revise_spec(existing_spec: str, qa: list[tuple[str, str]], state: TeamState) -> str:
@@ -304,7 +369,13 @@ async def revise_spec(existing_spec: str, qa: list[tuple[str, str]], state: Team
         f"### Existing spec to improve\n{existing_spec}\n\n"
         f"### Interview answers\n{_render_qa(qa)}\n"
     )
-    return await base.generate(ROLE, _system_with_elicit(REVISE_SYSTEM), user, state)
+    return await base.generate(
+        ROLE,
+        _authoring_system(REVISE_SYSTEM),
+        user,
+        state,
+        research_queries=_research_queries(existing_spec, qa),
+    )
 
 
 async def generate_spec(

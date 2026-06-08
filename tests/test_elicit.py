@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 from software_team import elicit
 from software_team.agents import base
 from software_team.main import app
-from software_team.skills.registry import skill_guidance, skill_names
+from software_team.skills.registry import skill_guidance, skill_names, skills_for
 
 
 def test_pm_library_includes_the_elicit_skill():
@@ -45,8 +45,9 @@ def test_author_spec_loads_elicit_skill_before_generating(monkeypatch):
     spec = asyncio.run(elicit.author_spec("Build a thing", qa, {"dry_run": False}))
 
     assert captured["role"] == "spec_author"
-    assert "Apply this skill and the method behind it:" in captured["system"]
-    assert "Discover" in captured["system"]  # the skill body is present
+    assert "Apply these skills and the method behind them:" in captured["system"]
+    assert "Discover" in captured["system"]  # the elicit skill body is present
+    assert "Research the market" in captured["system"]  # the web-research skill body too
     assert "Go with Postgres" in captured["user"]  # the interview answers reached the model
     assert spec.startswith("# Spec:")
 
@@ -87,9 +88,7 @@ def test_spec_command_rejects_empty_prompt():
 def test_spec_command_rejects_prompt_and_spec_together(tmp_path):
     draft = tmp_path / "draft.md"
     draft.write_text("# Draft\n")
-    result = CliRunner().invoke(
-        app, ["spec", "--spec", str(draft), "--prompt", "x", "--dry-run"]
-    )
+    result = CliRunner().invoke(app, ["spec", "--spec", str(draft), "--prompt", "x", "--dry-run"])
     assert result.exit_code != 0
 
 
@@ -112,7 +111,7 @@ def test_revise_spec_loads_elicit_skill_and_passes_existing_spec(monkeypatch):
     out = asyncio.run(elicit.revise_spec(draft, [("Which tech?", "Python")], {"dry_run": False}))
 
     assert "improving an existing spec" in captured["system"].lower()
-    assert "Apply this skill and the method behind it:" in captured["system"]
+    assert "Apply these skills and the method behind them:" in captured["system"]
     assert "Discover" in captured["system"]  # the elicit skill body
     assert "# My Draft" in captured["user"]  # the existing spec reaches the model
     assert out.startswith("# Spec:")
@@ -124,9 +123,7 @@ def test_spec_command_revises_input_file_and_leaves_it_untouched(tmp_path):
     draft.write_text(original)
     out = tmp_path / "better.md"
 
-    result = CliRunner().invoke(
-        app, ["spec", "--spec", str(draft), "--out", str(out), "--dry-run"]
-    )
+    result = CliRunner().invoke(app, ["spec", "--spec", str(draft), "--out", str(out), "--dry-run"])
 
     assert result.exit_code == 0, result.output
     assert out.exists()
@@ -194,3 +191,52 @@ def test_converse_non_interactive_generate_records_backbone():
     )
     assert len(qa) == len(elicit.MANDATORY_QUESTIONS)
     assert all(answer == elicit._UNANSWERED for _, answer in qa)
+
+
+# --------------------------------------------------------------------------- #
+# web research: the spec agent searches the internet before writing
+# --------------------------------------------------------------------------- #
+
+
+def test_pm_library_includes_the_research_skill():
+    # The web-search skill is in the Product Manager's library and binds the web_search tool.
+    assert "research-the-market" in skill_names("product_manager")
+    skill = next(s for s in skills_for("product_manager") if s.name == "research-the-market")
+    assert skill.tool is not None  # tool-backed: bound to the web_search LangChain tool
+    assert skill.kind == "tool"
+
+
+def test_research_queries_ground_on_a_named_stack():
+    # The stakeholder named the stack only in an interview answer; it still drives the search.
+    qa = [("Which technology should it use?", "Node.js with Postgres")]
+    queries = elicit._research_queries("Build a chat app", qa)
+
+    assert queries  # the agent has something to search for
+    assert len(queries) <= 2  # bounded to protect prefill on a local model
+    assert any("node.js" in q.lower() for q in queries)  # grounds on the requested stack
+    assert any("chat app" in q.lower() for q in queries)  # and on the product topic
+
+
+def test_research_queries_recommend_a_stack_when_none_is_named():
+    # No technology stated anywhere -> research current recommended options for this product.
+    qa = [("Which technology should it use?", elicit._UNANSWERED)]
+    queries = elicit._research_queries("Build a recipe sharing app", qa)
+
+    assert any("recommended technology stack" in q.lower() for q in queries)
+
+
+def test_author_spec_searches_the_web_before_writing(monkeypatch):
+    # The core requirement: writing the spec issues web-search queries to ground it.
+    captured = {}
+
+    async def fake_generate(role, system, user, state, research_queries=None):
+        captured["research_queries"] = research_queries
+        return "# Spec: X\n\n## Technology\nNode.js.\n"
+
+    monkeypatch.setattr(base, "generate", fake_generate)
+
+    qa = [("Which technology should it use?", "Node.js")]
+    asyncio.run(elicit.author_spec("Build a URL shortener", qa, {"dry_run": False}))
+
+    assert captured["research_queries"]  # the spec author asked the web, not just the model
+    assert any("node.js" in q.lower() for q in captured["research_queries"])
