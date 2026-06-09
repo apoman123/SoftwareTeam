@@ -25,9 +25,10 @@ Highlights:
 - **Grounded in current facts.** Every character can search the web for what it needs —
   current library APIs, today's stable versions, fresh best practices — and fold the
   findings into its work.
-- **Builds new or extends existing.** `run` builds a project from scratch; `feature`
-  integrates a new request into software the team already developed, re-running the whole
-  lifecycle so the change is reviewed, regression-tested, redeployed, and documented.
+- **Builds new or changes existing.** `run` builds a project from scratch; `feature`,
+  `modify`, and `remove` change software the team already developed — adding a new feature,
+  changing how an existing one behaves, or taking one out (deleting its files) — re-running
+  the whole lifecycle so the change is reviewed, regression-tested, redeployed, and documented.
 - **Runs offline.** A `--dry-run` mode produces a complete, test-passing example with no
   model server, provider package, or network at all.
 - **Async & observable.** Every character infers asynchronously (`astream`/`ainvoke`) and
@@ -247,8 +248,10 @@ uv run software-team run --spec examples/sample_spec.md
 # Or skip the file and just tell the PM what to build with a prompt:
 uv run software-team run --prompt "Build a URL shortener with click analytics" --dry-run
 
-# Add a feature to software the team already built (brownfield/incremental mode):
+# Change software the team already built (brownfield/incremental mode):
 uv run software-team feature --into workspace --prompt "Add task priorities" --dry-run
+uv run software-team modify  --into workspace --prompt "Make priorities support a numeric scale"
+uv run software-team remove  --into workspace --prompt "Remove the task priority feature"
 #   …or from a spec file, writing the updated copy elsewhere (leaving the original intact):
 uv run software-team feature --into workspace --spec examples/feature_priority.md --out workspace2
 
@@ -330,30 +333,38 @@ terminal (CI) so it stays scriptable. The `elicit-requirements` skill is adapted
 [**andreaswasita/copilot-agents-dojo**](https://github.com/andreaswasita/copilot-agents-dojo)
 (MIT, © 2026 Andreas Wasita).
 
-### Building new vs. extending existing software
+### Building new vs. changing existing software
 
-There are two commands, and both accept the same `--spec`/`--prompt` input:
+There are four commands, and all accept the same `--spec`/`--prompt` input:
 
 - **`run`** — greenfield. Build a brand-new project from the request.
-- **`feature`** — brownfield/incremental. Integrate the request as a **new feature into a
-  project the team has already developed**. Point `--into` at a previous run's workspace;
-  the loader (`src/software_team/project.py`) reads the existing code and docs, seeds them
-  into the run, and grounds every phase in what already exists, so the team *extends* the
-  software instead of rewriting it. The whole SDLC re-runs (so the change is reviewed,
-  tested for regressions, re-deployed, and the docs are refreshed).
+- **`feature`**, **`modify`**, **`remove`** — brownfield/incremental. Point `--into` at a
+  previous run's workspace; the loader (`src/software_team/project.py`) reads the existing
+  code and docs, seeds them into the run, and grounds every phase in what already exists, so
+  the team *changes* the software instead of rewriting it. The whole SDLC re-runs (so the
+  change is reviewed, tested for regressions, re-deployed, and the docs are refreshed). The
+  three differ only in **what** they do to that software:
+  - **`feature`** — **add** a new feature, integrating it into what is there.
+  - **`modify`** — **change how an existing feature behaves**: the team locates it, edits the
+    relevant files, and updates the affected tests and docs.
+  - **`remove`** — **take an existing feature out**: the team deletes its code, tests, and
+    docs (genuinely removing files that existed only for it, via a `<<<DELETE path >>>`
+    directive in the file-block protocol) while keeping every other feature working.
 
 ```bash
-# Modify the project in place:
+# Change the project in place:
 uv run software-team feature --into workspace --prompt "Add task priorities"
+uv run software-team modify  --into workspace --prompt "Make priorities a 1–5 numeric scale"
+uv run software-team remove  --into workspace --prompt "Remove the task priority feature"
 
 # Or write the updated project to a new directory, leaving the original untouched:
 uv run software-team feature --into workspace --spec examples/feature_priority.md --out workspace2
 ```
 
-In `--dry-run`, the feature command deterministically adds a `priority` field (and a
-`POST /tasks/{id}/priority` endpoint) to the demo Task API, with the original tests still
-passing — a self-contained demonstration of integrating a feature without breaking what
-exists.
+In `--dry-run`, `feature`/`modify` deterministically add a `priority` field (and a
+`POST /tasks/{id}/priority` endpoint) to the demo Task API, and `remove` deletes that
+feature's test file and trims the code back — with the remaining tests still passing — a
+self-contained demonstration of changing software without breaking what exists.
 
 ### Output (`workspace/`)
 

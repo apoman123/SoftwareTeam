@@ -20,9 +20,16 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from .. import observability, ui
 from ..llm import build_llm
 from ..skills.common import filesystem, search
-from ..skills.common.authoring import parse_file_blocks
+from ..skills.common.authoring import delete_block, parse_deletions, parse_file_blocks
 from ..skills.registry import guidance_for
-from ..state import FEATURE_MODE, TeamState
+from ..state import (
+    DELETE_FILE,
+    FEATURE_MODE,
+    FEATURE_OP_MARKERS,
+    OP_MODIFY,
+    OP_REMOVE,
+    TeamState,
+)
 
 # Per-query and total caps (characters) on the web-research block folded into a prompt.
 # Prompt-processing (prefill) is the dominant cost on a local CPU-offloaded model, and it
@@ -48,28 +55,65 @@ def with_skills(persona: str, character: str) -> str:
     return f"{persona}\n\nApply these skills and the technique behind each:\n{guidance}"
 
 
+def _op_instruction(op: str) -> str:
+    """Return the operation-specific instruction for a feature-mode prompt.
+
+    Each variant opens with the stable ``FEATURE_OP_MARKERS`` phrase for ``op`` so the
+    dry-run stub (and any node) can tell add/modify/remove apart from the prompt alone.
+
+    Args:
+        op: The feature operation (``OP_ADD`` / ``OP_MODIFY`` / ``OP_REMOVE``).
+
+    Returns:
+        The instruction sentence(s) telling the team what to do to the existing software.
+    """
+    marker = FEATURE_OP_MARKERS.get(op, FEATURE_OP_MARKERS[next(iter(FEATURE_OP_MARKERS))])
+    if op == OP_MODIFY:
+        return (
+            f"{marker} that already lives in this software: find it, change its behaviour "
+            "exactly as described, and keep every other feature working with its tests "
+            "passing. Re-emit ONLY the files you change, and update the affected unit/E2E "
+            "tests and any docs that describe the changed behaviour."
+        )
+    if op == OP_REMOVE:
+        return (
+            f"{marker} from this software: take out its code, its routes/endpoints and UI, "
+            "and its tests, along with any code left dead once it is gone, and drop its "
+            "mentions from the docs. Keep every OTHER feature working with its tests "
+            "passing, and do NOT remove shared code still used elsewhere. Re-emit the files "
+            "you trim with the feature's code removed, and to delete a whole file emit a "
+            "deletion directive on its own line (no body), e.g.\n"
+            f"{delete_block('path/to/file.ext')}"
+        )
+    return (
+        f"{marker} into it: build on what is there, change only what the feature needs, "
+        "preserve existing behaviour and unchanged files, and do not rebuild the project "
+        "from scratch."
+    )
+
+
 def feature_brief(state: TeamState) -> str:
     """Return the existing-software context block for an incremental feature run.
 
     In ``build`` mode (the default) this is empty, so every node behaves exactly as it
-    does for a greenfield run. In ``feature`` mode it returns the rendered baseline digest
-    of the already-developed software plus the instruction to integrate the requested
-    feature into it — extend and modify what exists rather than rebuild the project. Nodes
-    append it to their user prompt so the framing is consistent across the whole team.
+    does for a greenfield run. In ``feature`` mode it returns the operation-specific
+    instruction (add, modify, or remove the requested feature — see ``feature_op``)
+    followed by the rendered baseline digest of the already-developed software, so the team
+    changes what exists rather than rebuilding the project. Nodes append it to their user
+    prompt so the framing is consistent across the whole team.
 
     Args:
-        state: The shared team state (carries the mode and the rendered baseline).
+        state: The shared team state (carries the mode, the operation, and the baseline).
 
     Returns:
         The context block to append to a node's prompt, or "" in build mode.
     """
     if state.get("mode") != FEATURE_MODE:
         return ""
+    instruction = _op_instruction(state.get("feature_op", ""))
     return (
-        "\n\nThe software below already exists and is in production. Treat the request "
-        "above as a NEW feature to integrate into it: build on what is there, change only "
-        "what the feature needs, preserve existing behaviour and unchanged files, and do "
-        "not rebuild the project from scratch.\n\n" + state.get("baseline", "")
+        f"\n\nThe software below already exists and is in production. {instruction}\n\n"
+        + state.get("baseline", "")
     )
 
 
@@ -360,10 +404,13 @@ async def emit_files(
     user_prompt: str,
     research_queries: list[str] | None = None,
 ) -> dict[str, str]:
-    """Generate a file-block response, persist the files, and report them.
+    """Generate a file-block response, persist the files, apply deletions, and report them.
 
     This is the shared generate -> parse -> write cycle used by every node that produces
-    source/config files (software engineer, QA E2E tests, DevOps artifacts).
+    source/config files (software engineer, QA E2E tests, DevOps artifacts). A response may
+    also mark files for deletion (``<<<DELETE path >>>``); those are removed from the
+    workspace and returned as :data:`DELETE_FILE` sentinels so the ``source_files`` reducer
+    drops them too — this is how a ``remove`` run takes a feature's files out of the project.
 
     Args:
         state: The shared team state (carries dry-run mode and the output directory).
@@ -374,8 +421,9 @@ async def emit_files(
         research_queries: Optional web queries to ground the generation.
 
     Returns:
-        A ``{relative_path: content}`` map of the files written; empty when the model
-        emitted no file blocks.
+        A ``{relative_path: content}`` delta: written files mapped to their content, plus
+        any deleted paths mapped to :data:`DELETE_FILE`. Empty when the model emitted
+        neither a file block nor a deletion.
     """
     text = await generate(
         model_role,
@@ -385,11 +433,17 @@ async def emit_files(
         research_queries=research_queries,
     )
     files = parse_file_blocks(text)
+    deletions = parse_deletions(text)
     if files:
         ui.written(relpath(state, filesystem.write_files(output_dir(state), files)))
-    else:
+    removed = filesystem.delete_files(output_dir(state), deletions) if deletions else []
+    if removed:
+        ui.note(f"[yellow]removed {len(removed)} file(s):[/yellow] {', '.join(removed)}")
+    if not files and not deletions:
         ui.note("[yellow]no file blocks parsed from model output[/yellow]")
-    return files
+    # Mark every requested deletion (even one already absent on disk) so it is dropped from
+    # source_files; written files map to their content.
+    return {**files, **{path: DELETE_FILE for path in deletions}}
 
 
 def output_dir(state: TeamState) -> str:

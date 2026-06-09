@@ -8,8 +8,8 @@ isn't present). Live mode replaces all of this with actual model generations.
 
 from __future__ import annotations
 
-from .skills.common.authoring import file_blocks
-from .state import FEATURE_BRIEF_HEADER
+from .skills.common.authoring import delete_blocks, file_blocks
+from .state import FEATURE_BRIEF_HEADER, FEATURE_OP_MARKERS, OP_REMOVE
 
 # --------------------------------------------------------------------------- #
 # Generated application source (Task API)
@@ -399,6 +399,19 @@ FEATURE_FILES = {
     "app/main.py": _FEATURE_MAIN_PY,
     "tests/test_priority.py": _FEATURE_TESTS,
 }
+
+# --------------------------------------------------------------------------- #
+# Incremental removal (dry-run): "remove the task priority feature"
+#
+# Demonstrates `software-team remove` deterministically: the engineer re-emits the two
+# files it trims back to their pre-feature form and emits a deletion directive for the
+# feature's now-orphaned test file — proving a feature is genuinely taken out (its file is
+# deleted, not just left empty), while every other feature keeps passing. Live mode replaces
+# this with a real generation for the feature the user asked to remove.
+# --------------------------------------------------------------------------- #
+
+REMOVE_REEMIT = {"app/service.py": _SERVICE_PY, "app/main.py": _MAIN_PY}
+REMOVE_DELETES = ("tests/test_priority.py",)
 
 # --------------------------------------------------------------------------- #
 # QA end-to-end tests
@@ -1281,7 +1294,10 @@ def canned_response(role: str, prompt: str) -> str:
         return _QA_PLAN
     if role in ("software_engineer", "software_engineer_fix"):
         # In a feature run the prompt carries the existing-software brief; re-emit only the
-        # files the feature changes so unchanged code is preserved by the merge reducer.
+        # files the change touches so unchanged code is preserved by the merge reducer.
+        if FEATURE_OP_MARKERS[OP_REMOVE] in prompt:
+            # Remove: trim the two files back and delete the feature's orphaned test file.
+            return file_blocks(REMOVE_REEMIT) + "\n\n" + delete_blocks(REMOVE_DELETES)
         if FEATURE_BRIEF_HEADER in prompt:
             return file_blocks(FEATURE_FILES)
         return file_blocks(SWE_FILES)

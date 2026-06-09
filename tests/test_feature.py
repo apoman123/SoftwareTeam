@@ -16,9 +16,16 @@ from software_team.agents.base import feature_brief
 from software_team.graph import build_graph
 from software_team.main import app
 from software_team.skills.common import filesystem
+from software_team.skills.common.authoring import delete_blocks, parse_deletions
 from software_team.state import (
+    DELETE_FILE,
     FEATURE_BRIEF_HEADER,
     FEATURE_MODE,
+    FEATURE_OP_MARKERS,
+    OP_ADD,
+    OP_MODIFY,
+    OP_REMOVE,
+    _merge_dict,
     new_feature_state,
     new_state,
 )
@@ -236,3 +243,151 @@ def test_feature_cli_rejects_project_without_source(tmp_path):
         app, ["feature", "--into", str(tmp_path), "--prompt", "x", "--dry-run"]
     )
     assert result.exit_code != 0
+
+
+# --------------------------------------------------------------------------- #
+# modify / remove: the operation that the incremental run performs
+# --------------------------------------------------------------------------- #
+
+
+def test_new_feature_state_op_defaults_to_add_and_validates():
+    src = {"app/main.py": "x = 1"}
+    add = new_feature_state("p", "t", "/o", source_files=src, baseline="B")
+    remove = new_feature_state("p", "t", "/o", source_files=src, baseline="B", op=OP_REMOVE)
+    bogus = new_feature_state("p", "t", "/o", source_files=src, baseline="B", op="nonsense")
+
+    assert add["feature_op"] == OP_ADD  # default
+    assert remove["feature_op"] == OP_REMOVE
+    assert bogus["feature_op"] == OP_ADD  # unknown op falls back to the safe default
+
+
+def test_feature_brief_frames_each_operation():
+    base = {"mode": FEATURE_MODE, "baseline": "BASELINE-MARKER"}
+    add = feature_brief({**base, "feature_op": OP_ADD})
+    modify = feature_brief({**base, "feature_op": OP_MODIFY})
+    remove = feature_brief({**base, "feature_op": OP_REMOVE})
+
+    assert "NEW feature" in add
+    assert "CHANGE to an existing feature" in modify
+    assert "REMOVAL of an existing feature" in remove
+    # Removal additionally teaches the file-deletion directive.
+    assert "<<<DELETE" in remove
+    assert "<<<DELETE" not in add
+    # Every variant still carries the grounding baseline.
+    assert all("BASELINE-MARKER" in brief for brief in (add, modify, remove))
+
+
+# --------------------------------------------------------------------------- #
+# deletion protocol + reducer (what makes a real "remove" possible)
+# --------------------------------------------------------------------------- #
+
+
+def test_parse_deletions_extracts_marked_paths():
+    text = (
+        "<<<FILE app/keep.py >>>\nkeep = 1\n<<<END>>>\n"
+        "<<<DELETE app/gone.py >>>\n"
+        "<<<DELETE tests/test_gone.py >>>\n"
+    )
+    assert parse_deletions(text) == ["app/gone.py", "tests/test_gone.py"]
+    # De-duplicates and round-trips with the renderer.
+    assert parse_deletions(delete_blocks(("a.py", "a.py", "b.py"))) == ["a.py", "b.py"]
+
+
+def test_filesystem_delete_files_removes_present_and_prunes_empty_dirs(tmp_path):
+    filesystem.write_file(str(tmp_path), "app/feature/mod.py", "x = 1")
+    filesystem.write_file(str(tmp_path), "app/keep.py", "y = 2")
+
+    removed = filesystem.delete_files(str(tmp_path), ["app/feature/mod.py", "app/missing.py"])
+
+    assert removed == ["app/feature/mod.py"]  # only the file that existed
+    assert not (tmp_path / "app" / "feature").exists()  # emptied directory pruned
+    assert (tmp_path / "app" / "keep.py").exists()  # siblings untouched
+    assert (tmp_path / "app").exists()  # a still-populated parent is kept
+
+
+def test_delete_files_refuses_path_traversal(tmp_path):
+    with pytest.raises(ValueError):
+        filesystem.delete_files(str(tmp_path), ["../escape.py"])
+
+
+def test_merge_dict_reducer_honours_the_delete_sentinel():
+    left = {"a.py": "1", "b.py": "2"}
+    right = {"b.py": DELETE_FILE, "c.py": "3"}
+    # b.py is dropped, c.py added, a.py preserved.
+    assert _merge_dict(left, right) == {"a.py": "1", "c.py": "3"}
+
+
+def test_dryrun_remove_emits_a_deletion_directive():
+    prompt = f"task\n{FEATURE_OP_MARKERS[OP_REMOVE]} from this software\n{FEATURE_BRIEF_HEADER}"
+    out = dryrun.canned_response("software_engineer", prompt)
+
+    assert "<<<DELETE tests/test_priority.py >>>" in out  # the feature's file is removed
+    assert "<<<FILE app/service.py >>>" in out  # and the trimmed files are re-emitted
+
+
+# --------------------------------------------------------------------------- #
+# end-to-end: modify and remove against a built project
+# --------------------------------------------------------------------------- #
+
+# A trivial, always-passing test that stands in for a removable feature's dedicated tests.
+_SEEDED_FEATURE_TEST = "def test_priority():\n    assert True\n"
+
+
+def test_modify_cli_changes_existing_software(built_workspace, tmp_path):
+    ws = tmp_path / "modify_ws"
+    shutil.copytree(built_workspace, ws)
+
+    result = CliRunner().invoke(
+        app,
+        ["modify", "--into", str(ws), "--prompt", "Change how task priority works", "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.output
+    # The modify run went through the SDLC engine and re-emitted the changed feature's files.
+    assert (ws / "tests" / "test_priority.py").exists()
+    assert "set_priority" in (ws / "app" / "service.py").read_text()
+
+
+def test_remove_deletes_the_feature_file_and_keeps_the_rest(built_workspace, tmp_path):
+    ws = tmp_path / "remove_ws"
+    shutil.copytree(built_workspace, ws)
+    # Seed a feature whose dedicated test file the removal will delete.
+    filesystem.write_file(str(ws), "tests/test_priority.py", _SEEDED_FEATURE_TEST)
+    assert (ws / "tests" / "test_priority.py").exists()  # precondition
+
+    existing = project.load(str(ws))
+    state = new_feature_state(
+        "<prompt>",
+        "Remove the task priority feature",
+        str(ws),
+        source_files=existing.source_files,
+        baseline=existing.brief(),
+        op=OP_REMOVE,
+    )
+    state["dry_run"] = True
+    final = asyncio.run(build_graph().ainvoke(state, config={"recursion_limit": 50}))
+
+    assert final["feature_op"] == OP_REMOVE
+    # The feature's file was genuinely deleted from disk...
+    assert not (ws / "tests" / "test_priority.py").exists()
+    # ...and dropped from the tracked source map, so later phases don't reference it.
+    assert "tests/test_priority.py" not in final["source_files"]
+    # Every OTHER feature still builds, reviews clean, and its tests pass.
+    assert (ws / "tests" / "test_service.py").exists()
+    assert (ws / "app" / "service.py").exists()
+    assert final["review_status"] == "approve"
+    assert final["tests_passed"] is True
+
+
+def test_remove_cli_in_place(built_workspace, tmp_path):
+    ws = tmp_path / "remove_cli_ws"
+    shutil.copytree(built_workspace, ws)
+    filesystem.write_file(str(ws), "tests/test_priority.py", _SEEDED_FEATURE_TEST)
+
+    result = CliRunner().invoke(
+        app,
+        ["remove", "--into", str(ws), "--prompt", "Remove the task priority feature", "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not (ws / "tests" / "test_priority.py").exists()

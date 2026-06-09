@@ -11,8 +11,13 @@ import re
 
 FILE_OPEN = "<<<FILE"
 FILE_CLOSE = "<<<END>>>"
+# A one-line directive a code-producing agent emits to delete a whole file from the project
+# (used by "remove a feature" runs). It carries no body — unlike a FILE block — because the
+# file is being taken out, not rewritten.
+DELETE_OPEN = "<<<DELETE"
 
 _BLOCK_RE = re.compile(r"<<<FILE\s+(?P<path>[^\n>]+?)\s*>>>\n(?P<body>.*?)\n<<<END>>>", re.DOTALL)
+_DELETE_RE = re.compile(r"^<<<DELETE\s+(?P<path>[^\n>]+?)\s*>>>\s*$", re.MULTILINE)
 _FENCE_RE = re.compile(r"```(?P<lang>[a-zA-Z0-9_+-]*)\n(?P<body>.*?)```", re.DOTALL)
 
 
@@ -26,12 +31,39 @@ def file_blocks(files: dict[str, str]) -> str:
     return "\n\n".join(file_block(path, content) for path, content in files.items())
 
 
+def delete_block(path: str) -> str:
+    """Render one file-deletion directive in the block protocol."""
+    return f"{DELETE_OPEN} {path} >>>"
+
+
+def delete_blocks(paths: tuple[str, ...] | list[str]) -> str:
+    """Render a sequence of file-deletion directives, one per path."""
+    return "\n".join(delete_block(path) for path in paths)
+
+
 def parse_file_blocks(text: str) -> dict[str, str]:
     """Extract {path: content} from a response using the file-block protocol."""
     out: dict[str, str] = {}
     for match in _BLOCK_RE.finditer(text or ""):
         path = match.group("path").strip()
         out[path] = match.group("body")
+    return out
+
+
+def parse_deletions(text: str) -> list[str]:
+    """Extract the relative paths a response marked for deletion (``<<<DELETE path >>>``).
+
+    Args:
+        text: The raw model output.
+
+    Returns:
+        The de-duplicated paths to delete, in first-seen order.
+    """
+    out: list[str] = []
+    for match in _DELETE_RE.finditer(text or ""):
+        path = match.group("path").strip()
+        if path and path not in out:
+            out.append(path)
     return out
 
 

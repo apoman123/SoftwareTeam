@@ -11,7 +11,7 @@ from __future__ import annotations
 from .. import ui
 from ..skills.common import filesystem
 from ..skills.registry import skill_names
-from ..state import FEATURE_MODE, TeamState
+from ..state import DELETE_FILE, FEATURE_MODE, TeamState
 from .base import (
     emit_files,
     feature_brief,
@@ -100,7 +100,9 @@ async def software_engineer_node(state: TeamState) -> TeamState:
         user_prompt=user,
         research_queries=_build_research_queries(state),
     )
-    unit_tests = "\n\n".join(content for path, content in files.items() if "test" in path)
+    unit_tests = "\n\n".join(
+        content for path, content in files.items() if "test" in path and content != DELETE_FILE
+    )
     return {"source_files": files, "unit_tests": unit_tests, "current_phase": "code"}
 
 

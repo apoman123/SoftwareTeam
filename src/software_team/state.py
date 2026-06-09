@@ -15,21 +15,54 @@ from langchain_core.messages import BaseMessage
 from . import triage
 
 # How a run is framed. ``build`` is the default greenfield mode (turn a spec into a brand
-# new project); ``feature`` is the brownfield/incremental mode (integrate a new feature
-# into software the team has already developed). See ``new_feature_state``.
+# new project); ``feature`` is the brownfield/incremental mode (change software the team has
+# already developed). See ``new_feature_state``.
 BUILD_MODE = "build"
 FEATURE_MODE = "feature"
 
+# What an incremental (feature-mode) run does to the existing software. ``add`` integrates a
+# new feature (the original incremental mode); ``modify`` changes how an existing feature
+# behaves; ``remove`` takes an existing feature out. They share the whole brownfield engine
+# and differ only in the instruction ``agents.base.feature_brief`` injects into every node.
+OP_ADD = "add"
+OP_MODIFY = "modify"
+OP_REMOVE = "remove"
+FEATURE_OPS = (OP_ADD, OP_MODIFY, OP_REMOVE)
+
 # Header that marks the existing-software context block in a feature-mode prompt. It is a
-# stable sentinel: ``agents.base.feature_brief`` emits it and the dry-run stub keys off it
-# to return the incremental-feature variant of its canned output.
+# stable sentinel: ``project.ExistingProject.brief`` emits it (and ``feature_brief`` appends
+# the baseline carrying it) and the dry-run stub keys off it to return the incremental
+# variant of its canned output.
 FEATURE_BRIEF_HEADER = "## Existing software you are extending (incremental feature mode)"
+
+# A stable opening phrase per operation, emitted by ``agents.base.feature_brief`` so a node
+# (and the dry-run stub) can tell add/modify/remove apart from the prompt alone.
+FEATURE_OP_MARKERS: dict[str, str] = {
+    OP_ADD: "Treat the request above as a NEW feature to integrate",
+    OP_MODIFY: "Treat the request above as a CHANGE to an existing feature",
+    OP_REMOVE: "Treat the request above as the REMOVAL of an existing feature",
+}
+
+# Sentinel content a node can map a path to in its ``source_files`` delta to delete that file
+# from the project (used by ``remove`` runs). The ``source_files`` reducer drops the key, so
+# the file disappears from every later listing the same way it is deleted from disk. Chosen
+# to never collide with real file content.
+DELETE_FILE = "\x00__delete_file__\x00"
 
 
 def _merge_dict(left: dict[str, str], right: dict[str, str]) -> dict[str, str]:
-    """Reducer that merges file maps so multiple SWE passes accumulate files."""
+    """Reducer that merges file maps so multiple passes accumulate edits.
+
+    A value of :data:`DELETE_FILE` in ``right`` removes that path from the merged map instead
+    of setting it, so a ``remove`` run can drop a file from ``source_files`` (which several
+    nodes list) in lockstep with deleting it from disk.
+    """
     merged = dict(left or {})
-    merged.update(right or {})
+    for path, content in (right or {}).items():
+        if content == DELETE_FILE:
+            merged.pop(path, None)
+        else:
+            merged[path] = content
     return merged
 
 
@@ -45,7 +78,8 @@ class TeamState(TypedDict, total=False):
     spec_text: str
     output_dir: str
     dry_run: bool
-    mode: str  # BUILD_MODE (greenfield) or FEATURE_MODE (extend existing software)
+    mode: str  # BUILD_MODE (greenfield) or FEATURE_MODE (change existing software)
+    feature_op: str  # feature mode only: OP_ADD | OP_MODIFY | OP_REMOVE
     baseline: str  # feature mode only: rendered digest of the existing software
 
     # --- Capability flags (set by deterministic triage; gate which phases run) ---
@@ -141,30 +175,34 @@ def new_feature_state(
     *,
     source_files: dict[str, str],
     baseline: str,
+    op: str = OP_ADD,
 ) -> TeamState:
     """Build the initial state for an incremental (``feature``) run.
 
-    Same shape as :func:`new_state`, but framed for extending software the team has
+    Same shape as :func:`new_state`, but framed for changing software the team has
     already developed: the run is put in :data:`FEATURE_MODE`, the existing source files
     are pre-seeded so each phase modifies them in place (the ``source_files`` reducer
-    merges later edits on top), and a rendered ``baseline`` digest of the existing
-    project is carried so every node can ground its work in what already exists.
+    merges later edits on top and honours :data:`DELETE_FILE` deletions), and a rendered
+    ``baseline`` digest of the existing project is carried so every node can ground its
+    work in what already exists. ``op`` selects what the run does to that software.
 
     Args:
-        spec_path: Human-readable label for the new feature request (file path or
-            ``<prompt>``).
-        spec_text: The new feature description the team must integrate.
+        spec_path: Human-readable label for the change request (file path or ``<prompt>``).
+        spec_text: The change the team must make (the feature to add, modify, or remove).
         output_dir: Workspace the updated project is written to.
         source_files: The existing project's code/config files (path -> content),
             pre-seeded so unchanged files are preserved and edits accumulate.
         baseline: A rendered digest of the existing software (file tree + key docs) for
             grounding every phase.
+        op: The operation to perform: :data:`OP_ADD` (default), :data:`OP_MODIFY`, or
+            :data:`OP_REMOVE`.
 
     Returns:
         The initial team state for a feature run.
     """
     state = new_state(spec_path, spec_text, output_dir)
     state["mode"] = FEATURE_MODE
+    state["feature_op"] = op if op in FEATURE_OPS else OP_ADD
     state["source_files"] = dict(source_files)
     state["baseline"] = baseline
     state["current_phase"] = "feature"

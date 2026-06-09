@@ -5,14 +5,17 @@
     software-team run --spec examples/sample_spec.md [--out workspace] [--dry-run]
     software-team run --prompt "Build a URL shortener with click analytics"
     software-team feature --into workspace --prompt "Add task due dates"
+    software-team modify  --into workspace --prompt "Make due dates support time zones"
+    software-team remove  --into workspace --prompt "Remove the due-date feature"
     software-team skills        # print each character's skill set
 
 The team can be handed work in two ways: a written spec **file** (``--spec``) or a
 **prompt** typed directly on the command line (``--prompt``). Exactly one is required.
-``run`` builds a project from scratch; ``feature`` integrates a new request into a project
-the team has already developed (point ``--into`` at a previous run's workspace). ``spec``
-runs a short interactive interview (needs + technology) and writes a spec **file** you can
-then feed to ``run --spec``.
+``run`` builds a project from scratch; ``feature``, ``modify``, and ``remove`` change a
+project the team has already developed (point ``--into`` at a previous run's workspace) —
+respectively adding a new feature, changing how an existing one behaves, or taking one out.
+``spec`` runs a short interactive interview (needs + technology) and writes a spec **file**
+you can then feed to ``run --spec``.
 
 `--dry-run` swaps every LLM for a deterministic stub so the full pipeline and file
 generation can be exercised with no Ollama server running.
@@ -33,7 +36,7 @@ from .config import SETTINGS
 from .graph import build_graph
 from .skills.common import filesystem
 from .skills.registry import skills_catalog
-from .state import TeamState, new_feature_state, new_state
+from .state import OP_ADD, OP_MODIFY, OP_REMOVE, TeamState, new_feature_state, new_state
 
 app = typer.Typer(add_completion=False, help="Multi-agent software team (LangGraph + Ollama).")
 console = Console()
@@ -106,35 +109,23 @@ def run(
     _summary(final, out)
 
 
-@app.command()
-def feature(
-    into: Path = typer.Option(
-        ...,
-        "--into",
-        "-i",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        help="Workspace of the already-developed project to extend",
-    ),
-    spec: Path | None = typer.Option(
-        None, "--spec", "-s", exists=True, readable=True, help="Spec/use-case file for the feature"
-    ),
-    prompt: str | None = typer.Option(
-        None, "--prompt", "-p", help="Describe the new feature directly, instead of a spec file"
-    ),
-    out: Path | None = typer.Option(
-        None, "--out", "-o", help="Write the updated project here (default: modify --into in place)"
-    ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Use canned outputs (no Ollama needed)"),
+def _run_change(
+    op: str, *, into: Path, spec: Path | None, prompt: str | None, out: Path | None, dry_run: bool
 ) -> None:
-    """Integrate a new feature into software the team has already developed.
+    """Run an incremental change (add / modify / remove) against an existing project.
 
-    Point ``--into`` at a previous run's workspace and describe the new feature with a spec
-    file (``--spec``) or a prompt (``--prompt``); exactly one is required. The team re-runs
-    the SDLC against the existing code, extending it rather than rebuilding it. By default
-    the project is updated in place; pass ``--out`` to write the updated copy to a new
-    directory instead, leaving the original untouched.
+    Shared engine behind the ``feature``, ``modify``, and ``remove`` commands: it resolves
+    the request and the existing project, optionally mirrors it to a fresh ``--out``, then
+    re-runs the whole SDLC in feature mode with the chosen operation so the change is
+    designed, built, reviewed, tested, and (re)deployed against the existing code.
+
+    Args:
+        op: The operation to perform (``OP_ADD`` / ``OP_MODIFY`` / ``OP_REMOVE``).
+        into: Workspace of the already-developed project to change.
+        spec: Spec/use-case file describing the change (mutually exclusive with ``prompt``).
+        prompt: Direct description of the change (mutually exclusive with ``spec``).
+        out: Where to write the updated project; defaults to changing ``into`` in place.
+        dry_run: Whether to use canned outputs instead of a live model.
     """
     try:
         request = intake.resolve(spec, prompt)
@@ -150,7 +141,7 @@ def feature(
         project.mirror(existing, str(target))
 
     console.rule(
-        f"[bold]Software Team · feature[/bold] · into=[green]{into}[/green]"
+        f"[bold]Software Team · {op}[/bold] · into=[green]{into}[/green]"
         f" · {request.origin}=[green]{request.display}[/green] · {_mode_banner(dry_run)}"
     )
 
@@ -160,15 +151,16 @@ def feature(
         str(target),
         source_files=existing.source_files,
         baseline=existing.brief(),
+        op=op,
     )
     state["dry_run"] = dry_run
 
     observability.configure_langsmith()
     config = observability.run_config(
-        f"software-team:feature:{request.label}",
-        tags=["feature", request.origin],
+        f"software-team:{op}:{request.label}",
+        tags=[op, request.origin],
         metadata={
-            "swteam.command": "feature",
+            "swteam.command": op,
             "swteam.origin": request.origin,
             "swteam.dry_run": dry_run,
         },
@@ -177,6 +169,92 @@ def feature(
     final = asyncio.run(build_graph().ainvoke(state, config=config))
 
     _summary(final, target)
+
+
+# Options shared verbatim by the three incremental-change commands.
+_INTO_OPTION = typer.Option(
+    ...,
+    "--into",
+    "-i",
+    exists=True,
+    file_okay=False,
+    dir_okay=True,
+    help="Workspace of the already-developed project to change",
+)
+_OUT_OPTION = typer.Option(
+    None, "--out", "-o", help="Write the updated project here (default: change --into in place)"
+)
+_DRY_RUN_OPTION = typer.Option(False, "--dry-run", help="Use canned outputs (no Ollama needed)")
+
+
+@app.command()
+def feature(
+    into: Path = _INTO_OPTION,
+    spec: Path | None = typer.Option(
+        None, "--spec", "-s", exists=True, readable=True, help="Spec/use-case file for the feature"
+    ),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="Describe the new feature directly, instead of a spec file"
+    ),
+    out: Path | None = _OUT_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Add a new feature to software the team has already developed.
+
+    Point ``--into`` at a previous run's workspace and describe the new feature with a spec
+    file (``--spec``) or a prompt (``--prompt``); exactly one is required. The team re-runs
+    the SDLC against the existing code, extending it rather than rebuilding it. By default
+    the project is updated in place; pass ``--out`` to write the updated copy to a new
+    directory instead, leaving the original untouched.
+    """
+    _run_change(OP_ADD, into=into, spec=spec, prompt=prompt, out=out, dry_run=dry_run)
+
+
+@app.command()
+def modify(
+    into: Path = _INTO_OPTION,
+    spec: Path | None = typer.Option(
+        None, "--spec", "-s", exists=True, readable=True, help="Spec/use-case file for the change"
+    ),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="Describe how an existing feature should change"
+    ),
+    out: Path | None = _OUT_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Change how an existing feature behaves in already-developed software.
+
+    Point ``--into`` at a previous run's workspace and describe the change to an existing
+    feature with a spec file (``--spec``) or a prompt (``--prompt``); exactly one is
+    required. The team locates the feature, changes its behaviour, and re-runs the SDLC so
+    the rest of the project keeps working and its tests and docs are updated. By default the
+    project is updated in place; pass ``--out`` to write the updated copy elsewhere.
+    """
+    _run_change(OP_MODIFY, into=into, spec=spec, prompt=prompt, out=out, dry_run=dry_run)
+
+
+@app.command()
+def remove(
+    into: Path = _INTO_OPTION,
+    spec: Path | None = typer.Option(
+        None, "--spec", "-s", exists=True, readable=True, help="Spec/use-case file for the removal"
+    ),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="Describe the feature to remove from the software"
+    ),
+    out: Path | None = _OUT_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Remove an existing feature from already-developed software.
+
+    Point ``--into`` at a previous run's workspace and name the feature to remove with a
+    spec file (``--spec``) or a prompt (``--prompt``); exactly one is required. The team
+    takes out the feature's code, tests, and docs — deleting files that existed only for it
+    — while keeping every other feature working, then re-runs the SDLC to prove the result.
+    By default the project is updated in place; pass ``--out`` to write the updated copy
+    elsewhere.
+    """
+    _run_change(OP_REMOVE, into=into, spec=spec, prompt=prompt, out=out, dry_run=dry_run)
 
 
 @app.command()

@@ -36,6 +36,37 @@ def write_files(output_dir: str, files: dict[str, str]) -> list[str]:
     return [write_file(output_dir, path, content) for path, content in files.items()]
 
 
+def delete_files(output_dir: str, rel_paths: list[str] | tuple[str, ...]) -> list[str]:
+    """Delete files under ``output_dir`` and return the relative paths actually removed.
+
+    Used by "remove a feature" runs to take a file out of the project entirely. Paths are
+    confined to the workspace (the same traversal guard as writes), a path that does not
+    exist is skipped silently, and any directory left empty by the deletion is pruned so the
+    tree does not keep hollow folders.
+
+    Args:
+        output_dir: The workspace directory the project lives in.
+        rel_paths: Project-relative paths to delete.
+
+    Returns:
+        The relative paths that were present and removed (skipping any that were absent).
+    """
+    base = Path(output_dir)
+    removed: list[str] = []
+    for rel_path in rel_paths:
+        target = _safe_join(base, rel_path)
+        if not target.is_file():
+            continue
+        target.unlink()
+        removed.append(rel_path)
+        # Prune now-empty parent directories, but never the workspace root itself.
+        parent = target.parent
+        while parent != base.resolve() and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+    return removed
+
+
 def write_doc(output_dir: str, name: str, content: str) -> str:
     """Write a markdown design/ops document under docs/."""
     return write_file(output_dir, f"docs/{name}", content)
