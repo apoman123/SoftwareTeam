@@ -17,6 +17,42 @@ def test_resolve_from_spec_file_reads_text(tmp_path):
     assert request.display == str(spec)
 
 
+def test_spec_file_without_images_has_none(tmp_path):
+    spec = tmp_path / "spec.md"
+    spec.write_text("Build a Task API. No pictures here.", encoding="utf-8")
+
+    assert intake.resolve(spec, None).images == ()
+
+
+def test_spec_file_discovers_referenced_sample_images(tmp_path):
+    (tmp_path / "mock.png").write_bytes(b"\x89PNG\r\n")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "flow.jpg").write_bytes(b"\xff\xd8\xff")
+    spec = tmp_path / "spec.md"
+    spec.write_text(
+        "# App\n"
+        "Landing: ![hero](mock.png)\n"
+        "Flow: ![flow](assets/flow.jpg)\n"
+        "Brand: ![remote](https://example.com/logo.svg)\n"
+        "Missing: ![gone](nope.png)\n"
+        "Not an image: ![doc](spec.md)\n",
+        encoding="utf-8",
+    )
+
+    images = intake.resolve(spec, None).images
+
+    # Local images resolve to absolute paths; the remote URL passes through; the missing file
+    # and the non-image reference are dropped.
+    assert str((tmp_path / "mock.png").resolve()) in images
+    assert str((tmp_path / "assets" / "flow.jpg").resolve()) in images
+    assert "https://example.com/logo.svg" in images
+    assert len(images) == 3
+
+
+def test_prompt_requests_have_no_images():
+    assert intake.resolve(None, "Build a thing").images == ()
+
+
 def test_resolve_from_prompt_keeps_text():
     request = intake.resolve(None, "Build a URL shortener with click analytics")
 

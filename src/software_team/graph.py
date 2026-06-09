@@ -2,25 +2,32 @@
 
 A StateGraph routes the shared TeamState through four phases — Plan & Design, Code &
 Build, Deploy & Release, Operate & Monitor — with the Tech Lead acting as supervisor.
-Two feedback loops (code-review changes, failing tests) bounce work back to the
-engineer, each bounded by an iteration cap so the graph always terminates.
+Three feedback loops bounce work back to the engineer — code-review changes, the
+one-feature-at-a-time build loop, and failing tests — each bounded by an iteration cap so
+the graph always terminates.
+
+The Code & Build phase builds **one feature at a time**: the Product Manager decomposes the
+spec into an ordered ``features`` plan, and the Software Engineer builds each feature in turn.
+The Tech Lead then *verifies* it as the quality gate — running the project's test suite (a
+failing suite forces changes) and checking the feature against its acceptance criteria — and
+the loop only advances to the next feature once the current one is approved.
 
 Routing is also capability-aware. Deterministic triage sets ``needs_frontend`` and
 ``needs_deployment`` on the state (see ``triage``), and the supervisor skips the phases a
 project does not need: no UX/frontend for a pure API or library, and no
 containerisation/CI-CD/operate/infra-docs for a library, CLI or script.
 
-    START → PM ─needs_frontend?─→ UX → TechLead(design) → QA(plan) → SWE
-               └─no UI──────────────┘                                 │
-                                          ┌──needs_frontend?──────────┤
-                                  (UI) ▼  │                  (no UI)   │
-                                   Frontend ──────────────→ TechLead(review)
-                                                                  │
-                       ┌──────── changes (cap) ───────────────────┘
-                       ▼          approve ─needs_deployment?─→ DevOps(CI) ─┐
-                     SWE                └─no deploy──→ QA(run tests) ←──────┘
-                                                          │
-                          ┌──── fail (cap) ───────────────┤
+    START → PM ─needs_frontend?─→ UX → TechLead(design) → QA(plan) → SWE(feature i)
+               └─no UI──────────────┘                                     │
+                       ┌──── changes (cap) ────────────────────────→ TechLead(review:
+                       │                                              run tests + spec)
+                     SWE(feature i) ←── approve & more features ──────────┤
+                                          approve & UI not built ─→ Frontend ─┐
+                                          approve & done ─needs_deployment?─→ │
+                                                  │                  DevOps(CI)│
+                                       ┌──────────┘  └─no deploy─→ QA(tests) ←─┘
+                                       ▼     (Frontend is reviewed the same way)
+                          ┌──── fail (cap) ───── QA(run tests)
                           ▼     pass ─needs_deployment?─→ DevOps(CD) → Operate
                     SWE(fix)         └─no deploy───────────────┐         │
                                                                ▼         ▼
@@ -44,6 +51,15 @@ from .agents.devops_sre import (
     operate_node,
 )
 from .agents.frontend_engineer import frontend_engineer_node
+from .agents.garbage_collector import (
+    GC_REVIEW_ROUTES,
+    GC_SCAN_ROUTES,
+    gc_fix_node,
+    gc_scan_node,
+    route_after_gc_review,
+    route_after_gc_scan,
+    tech_lead_gc_request_node,
+)
 from .agents.product_manager import product_manager_docs_node, product_manager_node
 from .agents.qa_engineer import qa_planning_node, qa_report_node, qa_test_node
 from .agents.software_engineer import (
@@ -52,7 +68,6 @@ from .agents.software_engineer import (
     software_engineer_readme_node,
 )
 from .agents.tech_lead import (
-    route_after_build,
     route_after_planning,
     route_after_product_manager,
     route_after_qa_report,
@@ -110,20 +125,19 @@ def build_graph() -> CompiledStateGraph:
             "tech_lead_review": "tech_lead_review",
         },
     )
-    # After the backend build, build the frontend when needed, else go straight to review.
-    builder.add_conditional_edges(
-        "software_engineer",
-        route_after_build,
-        {"frontend_engineer": "frontend_engineer", "tech_lead_review": "tech_lead_review"},
-    )
+    # Every feature is reviewed right after it is built; the frontend is reviewed too.
+    builder.add_edge("software_engineer", "tech_lead_review")
     builder.add_edge("frontend_engineer", "tech_lead_review")
 
-    # Approve -> CI when deploying, else skip CI straight to the test gate.
+    # The feature loop: changes -> back to the engineer (same feature); approve -> next
+    # backend feature, then the frontend, then CI (or straight to the test gate when not
+    # deploying). See ``route_after_review``.
     builder.add_conditional_edges(
         "tech_lead_review",
         route_after_review,
         {
             "software_engineer": "software_engineer",
+            "frontend_engineer": "frontend_engineer",
             "devops_ci": "devops_ci",
             "qa_test": "qa_test",
         },
@@ -153,5 +167,33 @@ def build_graph() -> CompiledStateGraph:
     )
     builder.add_edge("devops_docs", "product_manager_docs")
     builder.add_edge("product_manager_docs", END)
+
+    return builder.compile()
+
+
+def build_gc_graph() -> CompiledStateGraph:
+    """Wire the on-demand garbage-collection flow (scan → Tech Lead → fix → verify).
+
+    A small maintenance graph, separate from the build pipeline: a deterministic scan submits
+    its findings to the Tech Lead, who triages them into a fix request; the engineer applies
+    the fixes; and the existing Tech Lead review (tests + lint) verifies the result, looping
+    within the bug-fix cap. A clean project short-circuits straight to the end.
+
+        START → gc_scan ─findings?─→ TechLead(request) → gc_fix → TechLead(review: tests+lint)
+                   └─clean─→ END           ┌──── changes (cap) ──────────┘
+                                           ▼ else
+                                          END
+    """
+    builder = StateGraph(TeamState)
+    builder.add_node("gc_scan", gc_scan_node)
+    builder.add_node("tech_lead_gc_request", tech_lead_gc_request_node)
+    builder.add_node("gc_fix", gc_fix_node)
+    builder.add_node("tech_lead_review", tech_lead_review_node)
+
+    builder.add_edge(START, "gc_scan")
+    builder.add_conditional_edges("gc_scan", route_after_gc_scan, GC_SCAN_ROUTES)
+    builder.add_edge("tech_lead_gc_request", "gc_fix")
+    builder.add_edge("gc_fix", "tech_lead_review")
+    builder.add_conditional_edges("tech_lead_review", route_after_gc_review, GC_REVIEW_ROUTES)
 
     return builder.compile()

@@ -7,6 +7,7 @@
     software-team feature --into workspace --prompt "Add task due dates"
     software-team modify  --into workspace --prompt "Make due dates support time zones"
     software-team remove  --into workspace --prompt "Remove the due-date feature"
+    software-team gc      --into workspace   # scan for rot, then Tech-Lead-gated clean-up
     software-team skills        # print each character's skill set
 
 The team can be handed work in two ways: a written spec **file** (``--spec``) or a
@@ -33,10 +34,18 @@ from rich.markdown import Markdown
 
 from . import elicit, intake, observability, project
 from .config import SETTINGS
-from .graph import build_graph
+from .graph import build_gc_graph, build_graph
 from .skills.common import filesystem
 from .skills.registry import skills_catalog
-from .state import OP_ADD, OP_MODIFY, OP_REMOVE, TeamState, new_feature_state, new_state
+from .state import (
+    OP_ADD,
+    OP_MODIFY,
+    OP_REMOVE,
+    TeamState,
+    new_feature_state,
+    new_gc_state,
+    new_state,
+)
 
 app = typer.Typer(add_completion=False, help="Multi-agent software team (LangGraph + Ollama).")
 console = Console()
@@ -89,7 +98,7 @@ def run(
         f" · {_mode_banner(dry_run)}"
     )
 
-    state = new_state(request.label, request.text, str(out))
+    state = new_state(request.label, request.text, str(out), images=request.images)
     state["dry_run"] = dry_run
 
     observability.configure_langsmith()
@@ -152,6 +161,7 @@ def _run_change(
         source_files=existing.source_files,
         baseline=existing.brief(),
         op=op,
+        images=request.images,
     )
     state["dry_run"] = dry_run
 
@@ -258,6 +268,55 @@ def remove(
 
 
 @app.command()
+def gc(
+    into: Path = _INTO_OPTION,
+    out: Path | None = _OUT_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Garbage-collect a project: scan for rot, then let the Tech Lead drive the fix.
+
+    Point ``--into`` at a previous run's workspace. The team scans the whole project for
+    documentation inconsistencies, architecture violations, and technical debt, submits the
+    findings to the Tech Lead (who triages them into a prioritised fix request), fixes them,
+    and verifies the result by running the tests and the linter — looping within the bug-fix
+    cap. A clean project is reported and left untouched. By default the project is updated in
+    place; pass ``--out`` to write the cleaned-up copy elsewhere, leaving the original alone.
+    """
+    try:
+        existing = project.load(str(into))
+    except project.ProjectError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    target = out or into
+    target.mkdir(parents=True, exist_ok=True)
+    if target.resolve() != into.resolve():
+        project.mirror(existing, str(target))
+
+    console.rule(
+        f"[bold]Software Team · gc[/bold] · into=[green]{into}[/green] · {_mode_banner(dry_run)}"
+    )
+
+    state = new_gc_state(
+        str(into),
+        str(target),
+        source_files=existing.source_files,
+        baseline=existing.brief(),
+    )
+    state["dry_run"] = dry_run
+
+    observability.configure_langsmith()
+    config = observability.run_config(
+        f"software-team:gc:{into}",
+        tags=["gc"],
+        metadata={"swteam.command": "gc", "swteam.dry_run": dry_run},
+    )
+    config["recursion_limit"] = SETTINGS.graph_recursion_limit
+    final = asyncio.run(build_gc_graph().ainvoke(state, config=config))
+
+    _gc_summary(final, target)
+
+
+@app.command()
 def spec(
     spec: Path | None = typer.Option(
         None,
@@ -324,6 +383,27 @@ def spec(
 def skills() -> None:
     """Print the skill set assigned to each character."""
     console.print(Markdown("# Team Skills\n\n" + skills_catalog()))
+
+
+def _gc_summary(state: TeamState, out: Path) -> None:
+    """Print a garbage-collection summary: issues found, fix passes, the verdict, artifacts."""
+    console.rule("[bold]Garbage collection complete[/bold]")
+    findings = state.get("gc_findings", 0)
+    if not findings:
+        console.print("[green]No issues found[/green] — the project is clean.")
+        return
+    verdict = state.get("review_status", "n/a")
+    fixes = state.get("fix_iters", 0)
+    console.print(
+        f"Issues found: [cyan]{findings}[/cyan] · Fix passes: [cyan]{fixes}[/cyan]"
+        f" · Final review: [bold]{verdict}[/bold]"
+    )
+    console.print(
+        "See [green]docs/garbage_collection.md[/green] (scan) and "
+        "[green]docs/gc_request.md[/green] (Tech Lead fix request)."
+    )
+    files = filesystem.list_tree(str(out))
+    console.print(f"\n[bold]{len(files)} files in[/bold] [green]{out}/[/green].")
 
 
 def _summary(state: TeamState, out: Path) -> None:

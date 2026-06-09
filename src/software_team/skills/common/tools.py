@@ -13,7 +13,7 @@ of these in its frontmatter, e.g.
 
 from __future__ import annotations
 
-from . import filesystem, search, security, shell
+from . import filesystem, gc, lint, search, security, shell
 
 TOOL_REGISTRY: dict[str, object] = {
     "write_source_file": filesystem.write_source_file,
@@ -21,8 +21,10 @@ TOOL_REGISTRY: dict[str, object] = {
     "list_project_files": filesystem.list_project_files,
     "run_tests": shell.run_tests,
     "run_shell": shell.run_shell,
+    "run_lint": lint.run_lint,
     "web_search": search.web_search_tool,
     "security_audit": security.security_audit,
+    "garbage_scan": gc.garbage_scan,
 }
 
 

@@ -78,4 +78,14 @@ async def frontend_engineer_node(state: TeamState) -> TeamState:
             f"{stack_hint(state) or 'a modern frontend framework'} 2026",
         ],
     )
-    return {"source_files": files, "current_phase": "code"}
+    delta: TeamState = {
+        "source_files": files,
+        "build_stage": "frontend",
+        "current_phase": "code",
+    }
+    # Mark the frontend as built and give its review a fresh budget on the first pass; on a
+    # redo (review requested changes) leave both so the per-component review cap still bounds it.
+    if not state.get("frontend_built"):
+        delta["frontend_built"] = True
+        delta["review_iters"] = 0
+    return delta

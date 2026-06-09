@@ -64,31 +64,71 @@ def _build_research_queries(state: TeamState) -> list[str]:
 
 
 async def software_engineer_node(state: TeamState) -> TeamState:
-    """Implement the service plus unit tests from the architecture and acceptance criteria."""
-    ui.announce(
-        ROLE,
-        "code",
-        "Implementing the service and unit tests",
-        skill_names(ROLE),
+    """Implement the **current feature** plus its unit tests, extending the project in place.
+
+    The team builds one feature at a time (the Product Manager's ordered ``features`` plan).
+    This node builds ``features[feature_cursor]``, advancing the cursor when the Tech Lead
+    approved the previous feature and redoing the current one (with the review feedback) when
+    changes were requested — so the per-feature review budget (``review_iters``) is reset on
+    each fresh feature and preserved across a redo.
+    """
+    features = state.get("features") or []
+    status = state.get("review_status")
+    cursor = state.get("feature_cursor", 0)
+
+    delta: TeamState = {"build_stage": "backend", "current_phase": "code"}
+    # An "approve" entry means the previous feature passed review: advance to the next one
+    # with a fresh review budget. A "changes" entry is a redo of the current feature.
+    if status == "approve" and cursor + 1 < len(features):
+        cursor += 1
+        delta["feature_cursor"] = cursor
+        delta["review_iters"] = 0
+    is_redo = status == "changes"
+
+    current = features[cursor] if features else ""
+    total = len(features) or 1
+    headline = (
+        f"Implementing feature {cursor + 1}/{total}: {current}"
+        if features
+        else "Implementing the service and unit tests"
+    )
+    ui.announce(ROLE, "code", headline, skill_names(ROLE))
+
+    feature_focus = (
+        "Implement THIS feature only; you may scaffold the project and shared modules on the "
+        "first feature, but for later features build on what already exists and re-emit only "
+        "the files you add or change (do not rebuild earlier features or rewrite unrelated "
+        f"files).\n\n### Feature to build now ({cursor + 1} of {total})\n{current}\n\n"
+        if features
+        else ""
     )
     user = (
         "Implement the service described below using the stack chosen in the architecture "
         "(do not substitute another language). Provide application code, unit tests for the "
         "business logic using that stack's standard test framework, and the stack's "
         "dependency manifest.\n\n"
+        f"{feature_focus}"
         f"### Tech Stack\n{state.get('tech_stack', '')}\n\n"
         f"### Architecture & API\n{state.get('architecture', '')}\n\n"
         f"### Acceptance Criteria\n{state.get('acceptance_criteria', '')}\n\n"
         f"{FILE_PROTOCOL}"
     )
-    if state.get("mode") == FEATURE_MODE:
+    if features and state.get("source_files"):
+        # Later features extend the in-progress project; show what exists so the engineer
+        # builds on it instead of regenerating files already written for earlier features.
+        user += (
+            "\n\nThe project already contains the files below from earlier features. Build on "
+            "them and re-emit only what this feature adds or changes.\n\n"
+            f"### Current source files\n{_code_listing(state.get('source_files', {}))}"
+        )
+    elif state.get("mode") == FEATURE_MODE:
         # Extending existing software: show the current code and re-emit only what changes.
         user += (
             "\n\nThis is an existing codebase. Re-emit ONLY the files you change to add the "
             "feature, plus any new files; do not touch unrelated files.\n\n"
             f"### Current source files\n{_code_listing(state.get('source_files', {}))}"
         )
-    if state.get("review_status") == "changes" and state.get("review_notes"):
+    if is_redo and state.get("review_notes"):
         user += f"\n\n### Address this review feedback\n{state['review_notes']}"
     user += feature_brief(state)
 
@@ -103,7 +143,12 @@ async def software_engineer_node(state: TeamState) -> TeamState:
     unit_tests = "\n\n".join(
         content for path, content in files.items() if "test" in path and content != DELETE_FILE
     )
-    return {"source_files": files, "unit_tests": unit_tests, "current_phase": "code"}
+    delta["source_files"] = files
+    delta["unit_tests"] = unit_tests
+    # Log each feature once, when it is first built (not on a redo of the same feature).
+    if features and not is_redo:
+        delta["feature_log"] = [current]
+    return delta
 
 
 async def software_engineer_fix_node(state: TeamState) -> TeamState:

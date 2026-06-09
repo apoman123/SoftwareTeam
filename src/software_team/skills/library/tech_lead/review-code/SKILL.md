@@ -1,13 +1,19 @@
 ---
 name: review-code
-description: Reviews submitted code as the quality gate and approves it or requests changes. Use when an engineer submits code for review.
+description: Verifies submitted code as the quality gate — runs the tests and checks the spec — then approves it or requests changes. Use when an engineer submits a feature for review.
 ---
 
 # Review code
 
-Review for correctness, **separation of concerns**, input validation, error handling,
-naming, and **test coverage of both happy and failure paths**.
+You are the quality gate. Confirm the code is **without bugs** and **follows the spec**.
 
-- Be specific and actionable; distinguish **blocking defects** from nits.
-- Approve unless there is a real defect — do not block on style alone.
+- **Run the test suite** and read the result. A failing test is a blocking defect — request
+  changes, regardless of how the code reads.
+- Check the feature under review against its **acceptance criteria**: does it actually do
+  what was specified?
+- Also review correctness, **separation of concerns**, input validation, error handling,
+  naming, and **test coverage of both happy and failure paths**.
+- Be specific and actionable; distinguish **blocking defects** from nits. Do not block on
+  style alone.
+- **Approve only when the tests pass and the feature meets its acceptance criteria.**
 - Begin the verdict with exactly one line: `REVIEW_STATUS: approve` or `REVIEW_STATUS: changes`.

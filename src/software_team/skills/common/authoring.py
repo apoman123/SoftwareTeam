@@ -75,6 +75,33 @@ def extract_fenced(text: str, lang: str | None = None) -> str | None:
     return None
 
 
+# A markdown list item: a bullet (-, *, +) or an ordered marker (1. / 1)), optionally
+# preceded by indentation. The captured body is the item's text (any trailing markers like
+# bold ** are kept as-is — callers can strip further if needed).
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?P<item>.+?)\s*$", re.MULTILINE)
+
+
+def parse_list_items(text: str) -> list[str]:
+    """Extract the items of a markdown list (ordered or bulleted) as plain strings.
+
+    Strips the leading bullet/number marker from each line and drops empty items, so a
+    ``## Feature Plan`` (or any list fragment) becomes an ordered ``list[str]``. Lines that
+    are not list items are ignored.
+
+    Args:
+        text: A markdown fragment containing a list (e.g. a section body).
+
+    Returns:
+        The list items in document order; empty when ``text`` has no list items.
+    """
+    items: list[str] = []
+    for match in _LIST_ITEM_RE.finditer(text or ""):
+        item = match.group("item").strip()
+        if item:
+            items.append(item)
+    return items
+
+
 def extract_section(text: str, heading: str) -> str | None:
     """Return the markdown section body following a `## heading` line."""
     pattern = re.compile(

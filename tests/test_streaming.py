@@ -97,7 +97,10 @@ def test_content_text_handles_str_list_and_none():
 def test_recursion_limit_scales_with_loop_caps(monkeypatch):
     monkeypatch.setenv("SWTEAM_MAX_REVIEW_ITERS", "10")
     monkeypatch.setenv("SWTEAM_MAX_FIX_ITERS", "10")
+    monkeypatch.setenv("SWTEAM_MAX_FEATURES", "7")
     settings = Settings()
-    # High caps must not starve the graph below the worst-case path length.
-    assert settings.graph_recursion_limit == 40 + 10 * 4 + 10 * 3
+    # High caps and a full feature plan must not starve the graph below the worst-case path:
+    # the build loop runs up to max_features features, each re-reviewable up to the review cap.
+    assert settings.max_features == 7
+    assert settings.graph_recursion_limit == 40 + 7 * (10 + 1) * 2 + 10 * 3
     assert settings.graph_recursion_limit > 50

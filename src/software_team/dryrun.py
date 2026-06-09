@@ -9,7 +9,7 @@ isn't present). Live mode replaces all of this with actual model generations.
 from __future__ import annotations
 
 from .skills.common.authoring import delete_blocks, file_blocks
-from .state import FEATURE_BRIEF_HEADER, FEATURE_OP_MARKERS, OP_REMOVE
+from .state import FEATURE_BRIEF_HEADER, FEATURE_OP_MARKERS, OP_GC, OP_REMOVE
 
 # --------------------------------------------------------------------------- #
 # Generated application source (Task API)
@@ -412,6 +412,31 @@ FEATURE_FILES = {
 
 REMOVE_REEMIT = {"app/service.py": _SERVICE_PY, "app/main.py": _MAIN_PY}
 REMOVE_DELETES = ("tests/test_priority.py",)
+
+# --------------------------------------------------------------------------- #
+# Garbage-collection clean-up (dry-run)
+#
+# The GC fix is a behaviour-preserving re-emit of the service module, so the canned project's
+# tests still pass while the loop exercises scan → request → fix → verify. Live mode replaces
+# this with a real clean-up of whatever the scanner reported.
+# --------------------------------------------------------------------------- #
+
+GC_FIX_REEMIT = {"app/service.py": _SERVICE_PY}
+
+_GC_REQUEST_DOC = """\
+# Garbage-Collection Fix Request
+
+Prioritised clean-up for the engineer. Keep behaviour unchanged; all tests must stay green.
+
+1. **Reconcile the docs with the code** — update any documentation that references files that
+   no longer exist, and document modules that are undocumented.
+2. **Restore layering** — move any delivery-framework code out of pure-logic modules into the
+   thin adapter.
+3. **Clear technical debt** — resolve `TODO`/`FIXME` markers, replace bare exception handlers
+   with specific handling, and remove leftover debug output.
+
+Re-emit only the files you change; delete genuinely dead files.
+"""
 
 # --------------------------------------------------------------------------- #
 # QA end-to-end tests
@@ -983,6 +1008,10 @@ Scenario: Complete a task
 - **Should**: US-4
 - **Could**: due dates, tags
 - **Won't (now)**: multi-user auth, persistence
+
+## Feature Plan
+1. Task creation and retrieval (US-1, US-2) — create a task and list/fetch tasks.
+2. Task completion and deletion (US-3, US-4) — mark a task done and delete a task.
 """
 
 _UX_DOC = """\
@@ -1292,9 +1321,14 @@ def canned_response(role: str, prompt: str) -> str:
         )
     if role == "qa_planning":
         return _QA_PLAN
+    if role == "tech_lead_gc_request":
+        return _GC_REQUEST_DOC
     if role in ("software_engineer", "software_engineer_fix"):
         # In a feature run the prompt carries the existing-software brief; re-emit only the
         # files the change touches so unchanged code is preserved by the merge reducer.
+        if FEATURE_OP_MARKERS[OP_GC] in prompt:
+            # Garbage-collection clean-up: a behaviour-preserving re-emit (tests stay green).
+            return file_blocks(GC_FIX_REEMIT)
         if FEATURE_OP_MARKERS[OP_REMOVE] in prompt:
             # Remove: trim the two files back and delete the feature's orphaned test file.
             return file_blocks(REMOVE_REEMIT) + "\n\n" + delete_blocks(REMOVE_DELETES)

@@ -19,13 +19,14 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from .. import observability, ui
 from ..llm import build_llm
-from ..skills.common import filesystem, search
+from ..skills.common import filesystem, media, search
 from ..skills.common.authoring import delete_block, parse_deletions, parse_file_blocks
 from ..skills.registry import guidance_for
 from ..state import (
     DELETE_FILE,
     FEATURE_MODE,
     FEATURE_OP_MARKERS,
+    OP_GC,
     OP_MODIFY,
     OP_REMOVE,
     TeamState,
@@ -68,6 +69,15 @@ def _op_instruction(op: str) -> str:
         The instruction sentence(s) telling the team what to do to the existing software.
     """
     marker = FEATURE_OP_MARKERS.get(op, FEATURE_OP_MARKERS[next(iter(FEATURE_OP_MARKERS))])
+    if op == OP_GC:
+        return (
+            f"{marker}: fix the documentation inconsistencies, architecture violations, and "
+            "technical debt described above WITHOUT changing intended behaviour. Reconcile the "
+            "docs with the code, move misplaced code to the right layer, and clear the debt. "
+            "Keep every feature working with its tests passing. Re-emit ONLY the files you "
+            "change, and to delete a whole dead file emit a deletion directive on its own line "
+            f"(no body), e.g.\n{delete_block('path/to/file.ext')}"
+        )
     if op == OP_MODIFY:
         return (
             f"{marker} that already lives in this software: find it, change its behaviour "
@@ -275,6 +285,7 @@ async def generate(
     user_prompt: str,
     state: TeamState,
     research_queries: list[str] | None = None,
+    images: list[str] | None = None,
 ) -> str:
     """Run one async LLM turn for ``role`` and return its text content.
 
@@ -282,8 +293,10 @@ async def generate(
     while the model works — on a tool-calling backend that supports concurrency the team can
     overlap independent calls. When ``research_queries`` are given (and not in dry-run), the
     latest matching web results are gathered concurrently and folded into the prompt so the
-    character can use current information. The turn is named/tagged for LangSmith so it shows
-    up per character in the trace.
+    character can use current information. When ``images`` are given (and not in dry-run), the
+    human message is sent as multimodal content so a vision-capable model can see the spec's
+    sample images alongside the text. The turn is named/tagged for LangSmith so it shows up
+    per character in the trace.
 
     Args:
         role: The tier key that selects the model (e.g. "software_engineer").
@@ -291,6 +304,7 @@ async def generate(
         user_prompt: The human message content.
         state: The shared team state (carries dry-run mode).
         research_queries: Optional web queries to ground the generation.
+        images: Optional image paths/URLs to attach as multimodal content.
 
     Returns:
         The model's response text.
@@ -304,10 +318,22 @@ async def generate(
             f"{findings}"
         )
 
-    llm = build_llm(role, dry_run=state.get("dry_run", False))
+    dry_run = state.get("dry_run", False)
+    # Attach sample images as multimodal content for vision models. Skipped in dry-run (the
+    # offline stub is text-only) and when no image actually resolves to a usable block.
+    blocks = [] if dry_run else media.image_blocks(images or [])
+    if blocks:
+        human_message: HumanMessage = HumanMessage(
+            content=[{"type": "text", "text": user_prompt}, *blocks]
+        )
+        ui.note(f"attached {len(blocks)} sample image(s) to the prompt")
+    else:
+        human_message = HumanMessage(content=user_prompt)
+
+    llm = build_llm(role, dry_run=dry_run)
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt),
+        human_message,
     ]
     config = observability.run_config(
         role,
@@ -318,7 +344,7 @@ async def generate(
             "swteam.mode": state.get("mode", "build"),
         },
     )
-    return await _arun_turn(llm, messages, dry_run=state.get("dry_run", False), config=config)
+    return await _arun_turn(llm, messages, dry_run=dry_run, config=config)
 
 
 def _content_text(content: Any) -> str:

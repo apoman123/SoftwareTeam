@@ -11,9 +11,11 @@ caps so the pipeline always terminates.
 
 from __future__ import annotations
 
+import asyncio
+
 from .. import ui
 from ..config import SETTINGS
-from ..skills.common import filesystem
+from ..skills.common import filesystem, lint, shell
 from ..skills.common.authoring import extract_fenced, extract_section
 from ..state import TeamState
 from .base import feature_brief, generate, output_dir, relpath, stack_hint, with_skills
@@ -32,10 +34,18 @@ fenced block (```sql for a relational database, or the equivalent for the chosen
 datastore). Prefer separating pure business logic from the delivery framework. Output
 markdown only."""
 
-REVIEW_SYSTEM = """You are a Senior Tech Lead doing code review. Judge correctness,
-separation of concerns, input validation, error handling and test coverage. Begin your
-response with exactly one line 'REVIEW_STATUS: approve' or 'REVIEW_STATUS: changes',
-then bullet-point findings. Approve unless there is a real defect."""
+REVIEW_SYSTEM = """You are a Senior Tech Lead doing code review and acting as the quality
+gate. You verify two things: that the code is **without bugs** and that it **follows the
+spec**. You are given the actual output of running the project's test suite and its linter.
+Treat any failing test as a blocking defect that must be fixed (request changes). For each
+linter finding, give the engineer a **specific, constructive suggestion** of how to fix it
+(name the file/symbol and the concrete change) — linting is advisory, so it does not by
+itself force changes, but request changes if a finding reveals a real defect. Beyond that,
+judge correctness, separation of concerns, input validation, error handling, and whether the
+feature under review satisfies its acceptance criteria. Begin your response with exactly one
+line 'REVIEW_STATUS: approve' or 'REVIEW_STATUS: changes', then bullet-point findings (put
+the lint fix suggestions under a '## Lint fix suggestions' heading). Approve only when the
+tests pass and the feature meets its acceptance criteria."""
 
 
 async def tech_lead_design_node(state: TeamState) -> TeamState:
@@ -96,14 +106,48 @@ async def tech_lead_design_node(state: TeamState) -> TeamState:
 
 
 async def tech_lead_review_node(state: TeamState) -> TeamState:
-    """Review the engineer's code and record an approve/changes verdict (bounded by a cap)."""
+    """Verify the code as the quality gate: run the tests, check the spec, then rule.
+
+    "Is it without bug?" is answered by actually running the project's test suite (a failing
+    suite forces a ``changes`` verdict, regardless of the model's opinion); "does it follow
+    our spec?" is answered by the model judging the code against the acceptance criteria for
+    the feature under review. Bounded by the per-feature review cap so the loop terminates.
+    """
     iters = state.get("review_iters", 0) + 1
-    ui.announce(ROLE, "code", f"Code review (pass {iters})", ["review-code", "route-workflow"])
+    feature = _current_feature(state)
+    headline = (
+        f"Reviewing feature: {feature} (pass {iters})" if feature else f"Code review (pass {iters})"
+    )
+    ui.announce(ROLE, "code", headline, ["review-code", "route-workflow"])
+
+    # Run the real test suite and the linter so the verdict is grounded in whether the code
+    # works and is clean, not just how it reads. Offloaded to threads so the blocking
+    # subprocesses never stall the loop.
+    out = output_dir(state)
+    outcome = await asyncio.to_thread(shell.run_test_suites, out)
+    lint_outcome = await asyncio.to_thread(lint.run_linters, out)
+    tests_failed = any(not run.result.ok for run in outcome.runs)
+    ran = ", ".join(run.component for run in outcome.runs) or "none"
+    test_verdict = "[red]failed[/red]" if tests_failed else "[green]passed[/green]"
+    ui.note(f"tests → {test_verdict} (ran: {ran})")
+    lint_verdict = (
+        "[green]clean[/green]"
+        if lint_outcome.clean
+        else f"[yellow]{lint_outcome.components_with_issues} component(s) with issues[/yellow]"
+    )
+    ui.note(f"lint → {lint_verdict}")
+
     files = state.get("source_files", {})
     listing = "\n\n".join(f"# {path}\n```\n{content}\n```" for path, content in files.items())
+    focus = f"### Feature under review\n{feature}\n\n" if feature else ""
     user = (
-        "Review this code against the requirements and acceptance criteria.\n\n"
+        "Review this code against the requirements and acceptance criteria, against the "
+        "result of actually running its test suite, and against the linter diagnostics "
+        "(turn each lint finding into a constructive fix suggestion).\n\n"
+        f"{focus}"
         f"### Acceptance Criteria\n{state.get('acceptance_criteria', '')}\n\n"
+        f"### Test suite result (just executed)\n{outcome.summary()}\n\n"
+        f"### Linter diagnostics (just executed)\n{lint_outcome.summary()}\n\n"
         f"### Code\n{listing}\n"
     ) + feature_brief(state)
     verdict = await generate(
@@ -116,17 +160,35 @@ async def tech_lead_review_node(state: TeamState) -> TeamState:
             "practices 2026",
         ],
     )
-    status = "changes" if "review_status: changes" in verdict.lower() else "approve"
+    # Failing tests are a defect: force "changes" even if the model would have approved. Lint
+    # is advisory — it informs the review's suggestions but never forces changes on its own.
+    status = (
+        "changes"
+        if tests_failed or "review_status: changes" in verdict.lower()
+        else "approve"
+    )
     ui.note(f"verdict: [bold]{status}[/bold]")
-    return {"review_notes": verdict, "review_status": status, "review_iters": iters}
+    review_notes = (
+        f"{verdict}\n\n### Test suite result\n{outcome.summary()}"
+        f"\n\n### Linter diagnostics\n{lint_outcome.summary()}"
+    )
+    return {"review_notes": review_notes, "review_status": status, "review_iters": iters}
+
+
+def _current_feature(state: TeamState) -> str:
+    """Return the feature currently under review (empty when there is no feature plan)."""
+    features = state.get("features") or []
+    cursor = state.get("feature_cursor", 0)
+    return features[cursor] if 0 <= cursor < len(features) else ""
 
 
 # --- Supervisor routing (the `route_workflow` skill) ---
 #
-# Beyond the two feedback loops (review changes, failing tests), routing is capability-aware:
-# the deterministic ``needs_frontend`` / ``needs_deployment`` flags (set by ``triage``) let
-# the supervisor skip phases a project does not need — no UX/frontend for a pure API, and no
-# containerisation/CI-CD/operate/infra-docs for a library or CLI.
+# Beyond the three feedback loops (review changes, the one-feature-at-a-time build loop, and
+# failing tests), routing is capability-aware: the deterministic ``needs_frontend`` /
+# ``needs_deployment`` flags (set by ``triage``) let the supervisor skip phases a project does
+# not need — no UX/frontend for a pure API, and no containerisation/CI-CD/operate/infra-docs
+# for a library or CLI.
 
 
 def route_after_product_manager(state: TeamState) -> str:
@@ -146,18 +208,28 @@ def route_after_planning(state: TeamState) -> str:
     return "frontend_engineer" if state.get("needs_frontend") else "tech_lead_review"
 
 
-def route_after_build(state: TeamState) -> str:
-    """Build the frontend after the backend when a UI is needed, else go to review."""
-    return "frontend_engineer" if state.get("needs_frontend") else "tech_lead_review"
-
-
 def route_after_review(state: TeamState) -> str:
-    """Loop back for changes (within the cap); else go to CI, or skip straight to testing."""
+    """Drive the one-feature-at-a-time build loop after each Tech Lead verdict.
+
+    On "changes" (within the per-feature review cap) loop back to whoever produced the code
+    under review — the frontend engineer while building the UI, otherwise the software
+    engineer. On approval (or once the cap is hit), advance the loop: build the next backend
+    feature if any remain, then the frontend if the product needs one and it has not been
+    built yet, and only then leave the build phase for CI (or straight to the test gate when
+    the project does not deploy).
+    """
+    stage = state.get("build_stage", "backend")
     if (
         state.get("review_status") == "changes"
         and state.get("review_iters", 0) < SETTINGS.max_review_iters
     ):
+        return "frontend_engineer" if stage == "frontend" else "software_engineer"
+
+    features = state.get("features") or []
+    if stage == "backend" and state.get("feature_cursor", 0) + 1 < len(features):
         return "software_engineer"
+    if state.get("needs_frontend") and not state.get("frontend_built"):
+        return "frontend_engineer"
     return "devops_ci" if state.get("needs_deployment") else "qa_test"
 
 

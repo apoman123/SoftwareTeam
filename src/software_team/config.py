@@ -85,6 +85,8 @@ ROLE_TIERS: dict[str, str] = {
     "ux_designer": "narrative",
     "tech_lead_design": "coder",
     "tech_lead_review": "coder",
+    # Garbage-collection triage — planning/prose, so the narrative tier.
+    "tech_lead_gc_request": "narrative",
     "qa_planning": "narrative",
     "software_engineer": "coder",
     "software_engineer_fix": "coder",
@@ -177,6 +179,10 @@ class Settings:
     # --- Loop caps (prevent infinite review / bug-fix loops) ---
     max_review_iters: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_REVIEW_ITERS", 2))
     max_fix_iters: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_FIX_ITERS", 2))
+    # Upper bound on the number of features the Product Manager's plan is split into. The Code
+    # & Build phase builds and reviews one feature at a time, so this caps the loop's length
+    # (and feeds the graph's recursion budget). Raise it for large specs with many features.
+    max_features: int = field(default_factory=lambda: _env_int("SWTEAM_MAX_FEATURES", 12))
     # Max rounds of the interactive spec interview (each round the agent may ask follow-up
     # questions based on the answers so far). Bounds the conversation so it always ends.
     max_interview_rounds: int = field(
@@ -224,16 +230,19 @@ class Settings:
     def graph_recursion_limit(self) -> int:
         """A LangGraph superstep budget that scales with the feedback-loop caps.
 
-        The review loop re-runs build -> (frontend) -> review and the fix loop re-runs
-        test -> fix, so raising ``SWTEAM_MAX_REVIEW_ITERS`` / ``SWTEAM_MAX_FIX_ITERS`` can
-        push the worst-case path past a fixed budget and abort a *healthy* run partway with
-        a recursion error. Derive the limit from the caps (plus headroom for the fixed
-        plan/deploy/document phases) so turning the caps up never starves the graph.
+        The Code & Build phase builds and reviews **one feature at a time**, so the
+        backend loop runs up to ``max_features`` features and each can be re-reviewed up to
+        ``max_review_iters`` times (a build + a review per pass). The fix loop separately
+        re-runs test -> fix. Raising ``SWTEAM_MAX_REVIEW_ITERS`` / ``SWTEAM_MAX_FIX_ITERS`` /
+        ``SWTEAM_MAX_FEATURES`` could otherwise push the worst-case path past a fixed budget
+        and abort a *healthy* run with a recursion error. Derive the limit from the caps and
+        the feature ceiling (plus headroom for the fixed plan/deploy/document phases) so
+        neither turning the caps up nor a long feature plan starves the graph.
 
         Returns:
             The recursion limit to pass to ``graph.invoke``.
         """
-        return 40 + self.max_review_iters * 4 + self.max_fix_iters * 3
+        return 40 + self.max_features * (self.max_review_iters + 1) * 2 + self.max_fix_iters * 3
 
 
 def repo_root() -> Path:

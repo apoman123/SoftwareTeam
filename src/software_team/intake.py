@@ -11,13 +11,20 @@ exactly one was supplied and normalises it into a :class:`FeatureRequest`.
 
 from __future__ import annotations
 
+import re
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from .skills.common.media import is_image_ref
 
 # The channels a feature request can arrive through.
 FILE = "file"
 PROMPT = "prompt"
+
+# Markdown image embed: ``![alt](path/or/url "title")`` — captures the path/URL. Sample
+# images shipped with a spec are referenced this way so the team can pick them up.
+_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+[\"'][^\"']*[\"'])?\s*\)")
 
 # Source label used when the request was typed as a prompt rather than read from a file.
 PROMPT_LABEL = "<prompt>"
@@ -38,11 +45,14 @@ class FeatureRequest:
         label: A human-readable source label — the spec file path, or ``<prompt>``.
         text: The spec / use-case text the PM turns into requirements.
         origin: The channel the request arrived through (``FILE`` or ``PROMPT``).
+        images: Sample images referenced by the spec (resolved local paths / URLs), which
+            the Product Manager hands to the UI/UX Designer.
     """
 
     label: str
     text: str
     origin: str
+    images: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def display(self) -> str:
@@ -58,16 +68,53 @@ class FeatureRequest:
         return self.label
 
 
+def _discover_images(text: str, base_dir: Path) -> tuple[str, ...]:
+    """Find the sample images a spec references (markdown embeds), in first-seen order.
+
+    Each markdown image reference is kept if it is an ``http(s)`` URL or a local image file
+    that exists (resolved relative to the spec's directory, or as an absolute path). Anything
+    else — a broken link, a non-image, a missing file — is dropped, so a spec with no usable
+    images simply yields an empty tuple.
+
+    Args:
+        text: The spec markdown to scan.
+        base_dir: The spec file's directory, used to resolve relative image paths.
+
+    Returns:
+        The de-duplicated image references (absolute local paths and URLs), in order.
+    """
+    found: list[str] = []
+    for raw in _MD_IMAGE_RE.findall(text or ""):
+        ref = raw.strip()
+        if not ref or not is_image_ref(ref):
+            continue
+        if ref.startswith(("http://", "https://")):
+            resolved = ref
+        else:
+            candidate = (base_dir / ref).expanduser()
+            if not candidate.is_file():
+                continue
+            resolved = str(candidate.resolve())
+        if resolved not in found:
+            found.append(resolved)
+    return tuple(found)
+
+
 def from_file(path: Path) -> FeatureRequest:
     """Build a feature request from a spec file.
+
+    Any sample images the spec embeds (markdown ``![](...)`` references) are discovered and
+    resolved relative to the spec file, so the team can hand them to the UI/UX Designer.
 
     Args:
         path: Path to a readable spec / use-case file.
 
     Returns:
-        A feature request carrying the file's text.
+        A feature request carrying the file's text and any referenced sample images.
     """
-    return FeatureRequest(label=str(path), text=path.read_text(encoding="utf-8"), origin=FILE)
+    text = path.read_text(encoding="utf-8")
+    images = _discover_images(text, path.resolve().parent)
+    return FeatureRequest(label=str(path), text=text, origin=FILE, images=images)
 
 
 def from_prompt(prompt: str) -> FeatureRequest:

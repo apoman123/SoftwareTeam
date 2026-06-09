@@ -22,6 +22,11 @@ def test_full_pipeline_dry_run(tmp_path):
     assert final["needs_backend"] is True
     assert final["needs_deployment"] is True
 
+    # The work was decomposed into features and built one at a time: the loop walked the
+    # whole plan (cursor reached the last feature) and the Tech Lead approved the result.
+    assert len(final["features"]) >= 1
+    assert final["feature_cursor"] == len(final["features"]) - 1
+
     # The generated project tests must actually pass.
     assert final["tests_passed"] is True
     assert final["review_status"] == "approve"

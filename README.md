@@ -79,7 +79,11 @@ principles. The output is `docs/ux_design.md`, which the Tech Lead designs the
 architecture against. The companion `apply-ui-quality-checklist` skill distils a
 priority-ordered UX review pass adapted from
 [**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
-(MIT, © 2024 Next Level Builder).
+(MIT, © 2024 Next Level Builder). It *describes* but never *draws* — yet it can **look at
+sample images** when a spec ships them: any images a spec file references with markdown
+`![](…)` (mock-ups, screenshots, brand references — local files or URLs) are discovered at
+intake, handed over by the Product Manager, and sent to the designer as multimodal input on
+a vision-capable provider, so the written UX is grounded in what the stakeholder showed.
 
 Skills come in two kinds: **tool-backed** skills that perform real I/O (writing files,
 running the project's test suite — implemented as LangChain `@tool`s under `skills/common/`)
@@ -163,6 +167,12 @@ a priority-ordered UX review pass adapted from
 (MIT, © 2024 Next Level Builder). The designer describes the UI in words for the Tech
 Lead and draws nothing, so it ships no embedded engine or vendored data.
 
+The 💻 **Software Engineer**'s `write-unit-tests` skill adapts its test-case strategy
+(Given-When-Then, the `{method}_{state}_{outcome}` naming convention, INCLUDE/EXCLUDE
+criteria, one behaviour per test, no logic in tests) from
+[**clear-solutions/unit-tests-skills**](https://github.com/clear-solutions/unit-tests-skills);
+the skill's References section also cites the Google Testing Blog and Anthropic's skill-authoring guide.
+
 Sources (all MIT-licensed; each `SKILL.md` carries the specific link):
 [`jenkins-expert`](https://github.com/0xfurai/claude-code-subagents/blob/main/agents/jenkins-expert.md)
 from **0xfurai/claude-code-subagents** ·
@@ -194,26 +204,38 @@ Sources for the practices baked into the skill bodies:
 
 ## Workflow (LangGraph)
 
-The Tech Lead acts as supervisor. Two feedback loops (review changes, failing tests)
-bounce work back to the engineer, each bounded by an iteration cap so the run always
-terminates. A final **Document & Handoff** phase then has each role write the
-documentation it knows best.
+The Tech Lead acts as supervisor. The team builds **one feature at a time**: the Product
+Manager decomposes the spec into an ordered **feature plan**, and the Software Engineer
+builds each feature in turn. The Tech Lead then *verifies* each feature as the quality gate
+— it **runs the project's test suite** (a failing suite forces changes, so "is it without
+bugs?" is checked, not assumed), **runs the project's linter** and turns each diagnostic into
+a constructive fix suggestion for the engineer (advisory — lint guides but does not by itself
+block), and judges the code against its acceptance criteria — and the loop only advances to
+the next feature once the current one is approved. Three feedback loops
+(review changes, the feature loop, failing tests) bounce work back to the engineer, each
+bounded by an iteration cap so the run always terminates. A final **Document & Handoff** phase
+then has each role write the documentation it knows best.
 
 ```text
-START → PM → UX → TechLead(design) → QA(plan) → SWE → TechLead(review)
-                                                         │
-                       ┌──────── changes (cap) ──────────┘
-                       ▼                       approve
-                     SWE                          │
+START → PM(feature plan) → UX → TechLead(design) → QA(plan) → SWE(feature i)
+                                                                  │
+                  ┌──── changes (cap) ─────────────────→ TechLead(review:
+                  │                                       run tests + check spec)
+                SWE(feature i) ←── approve & more features ───────┤
+                                     approve & UI not built ─→ Frontend ─┐
+                                     approve & done                      │
+                                                  ▼                      │
+                                            DevOps(CI) ← (reviewed too) ─┘
+                                                  │
                                                   ▼
-                                            DevOps(CI) → QA(run tests)
-                                                            │
-                          ┌──────── fail (cap) ─────────────┤
-                          ▼                       pass       │
-                    SWE(fix) → QA(run tests)                 ▼
-                                                     DevOps(CD) → Operate
-                                                                    │
-                                                                    ▼
+                                            QA(run tests)
+                                                  │
+                          ┌──────── fail (cap) ───┤
+                          ▼              pass      │
+                    SWE(fix) → QA(run tests)       ▼
+                                          DevOps(CD) → Operate
+                                                          │
+                                                          ▼
   END ← PM(user manual) ← DevOps(infra docs) ← QA(test report) ← SWE(README)
 ```
 
@@ -335,7 +357,8 @@ terminal (CI) so it stays scriptable. The `elicit-requirements` skill is adapted
 
 ### Building new vs. changing existing software
 
-There are four commands, and all accept the same `--spec`/`--prompt` input:
+There are four build commands (all accept the same `--spec`/`--prompt` input) plus a `gc`
+maintenance command (described below):
 
 - **`run`** — greenfield. Build a brand-new project from the request.
 - **`feature`**, **`modify`**, **`remove`** — brownfield/incremental. Point `--into` at a
@@ -365,6 +388,32 @@ In `--dry-run`, `feature`/`modify` deterministically add a `priority` field (and
 `POST /tasks/{id}/priority` endpoint) to the demo Task API, and `remove` deletes that
 feature's test file and trims the code back — with the remaining tests still passing — a
 self-contained demonstration of changing software without breaking what exists.
+
+### Garbage collection (`gc`) — scan for rot, then a Tech-Lead-gated clean-up
+
+A fifth, maintenance command sweeps a whole existing project for accumulated problems and
+fixes them under the Tech Lead's supervision:
+
+```bash
+uv run software-team gc --into workspace                 # clean up in place
+uv run software-team gc --into workspace --out workspace-clean   # or write a cleaned copy
+```
+
+A deterministic, offline scanner (`src/software_team/skills/common/gc.py`, modelled on the
+DevSecOps `security_audit`) flags three kinds of rot, each with a concrete fix:
+
+- **Documentation inconsistency** — docs referencing files that no longer exist, leftover
+  placeholder text, or source modules no documentation mentions.
+- **Architecture violation** — a delivery framework imported into a pure-logic module, a
+  "god" file, or a hardcoded secret.
+- **Technical debt** — `TODO`/`FIXME` markers, empty exception handlers, leftover debug
+  output, or a module with no test.
+
+The findings (`docs/garbage_collection.md`) are **submitted to the Tech Lead**, who triages
+them into a prioritised fix request (`docs/gc_request.md`); the Software Engineer applies the
+fixes; and the same Tech Lead review (tests + linter) **verifies** the clean-up, looping within
+the bug-fix cap. A clean project is reported and left untouched. The Tech Lead's tool-backed
+`collect-garbage` skill drives the scan + triage.
 
 ### Output (`workspace/`)
 
@@ -440,6 +489,9 @@ no-ops, so behaviour (and `--dry-run`) is unchanged.
 - `SWTEAM_MAX_REVIEW_ITERS`, `SWTEAM_MAX_FIX_ITERS` — feedback-loop caps (default 2). The
   graph's `recursion_limit` is derived from these, so raising the caps never aborts a
   healthy run partway with a recursion error.
+- `SWTEAM_MAX_FEATURES` — how many features the PM splits a spec into (default 12). The team
+  builds and reviews one feature at a time, so this caps the build loop's length (and feeds
+  the recursion budget). Raise it for large specs; lower it for coarser, fewer features.
 - `SWTEAM_MAX_INTERVIEW_ROUNDS` — how many rounds the interactive `spec` interview may run
   (default 3); each round the agent can ask follow-up questions based on your answers.
 

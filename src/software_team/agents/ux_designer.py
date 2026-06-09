@@ -22,8 +22,11 @@ written description of the UI and the user experience — you never draw. Produc
 wireframes, ASCII art, diagrams, or images; describe each screen's layout, content
 hierarchy, and primary action in words instead. You map the user flow and call out
 empty/error/loading states, and you specify each component's states, validation, and
-copy. If the product is an API or backend service, keep the UX minimal: describe the
-primary user journey and a small reference client. Output markdown only."""
+copy. When sample images are provided (mock-ups, screenshots, or brand references), study
+them and ground your description in what they show — layout, hierarchy, colour/typography
+cues, and components — and note where the spec text and the images differ. If the product
+is an API or backend service, keep the UX minimal: describe the primary user journey and a
+small reference client. Output markdown only."""
 
 
 async def ux_designer_node(state: TeamState) -> TeamState:
@@ -39,13 +42,18 @@ async def ux_designer_node(state: TeamState) -> TeamState:
     Returns:
         A state delta with the rendered ``ux_design`` markdown and the current phase.
     """
-    ui.announce(
-        ROLE,
-        "plan",
-        "Describing the UI and UX design for the tech lead",
-        skill_names(ROLE),
-    )
+    images = state.get("spec_images") or []
+    headline = "Describing the UI and UX design for the tech lead"
+    if images:
+        headline += f" (with {len(images)} sample image(s) from the spec)"
+    ui.announce(ROLE, "plan", headline, skill_names(ROLE))
 
+    image_note = (
+        "\n\nThe stakeholder provided sample image(s) below (mock-ups / screenshots / brand "
+        "references). Study them and ground your description in what they show."
+        if images
+        else ""
+    )
     user = (
         "Based on these product requirements, describe the UX in words for the Tech "
         "Lead. Do not draw anything — no wireframes, ASCII art, or diagrams.\n\n"
@@ -59,7 +67,7 @@ async def ux_designer_node(state: TeamState) -> TeamState:
         "error/success states, validation rules, and the exact empty and error copy)\n"
         "## Usability & Accessibility Notes (Nielsen heuristics, WCAG POUR, and the key "
         "UI quality checks)\n"
-    ) + feature_brief(state)
+    ) + image_note + feature_brief(state)
     doc = await generate(
         ROLE,
         with_skills(SYSTEM, ROLE),
@@ -69,6 +77,7 @@ async def ux_designer_node(state: TeamState) -> TeamState:
             "latest WCAG accessibility guidelines 2026",
             "current UX usability best practices 2026",
         ],
+        images=list(images),
     )
     path = filesystem.write_doc(output_dir(state), "ux_design.md", doc)
     ui.written(relpath(state, [path]))

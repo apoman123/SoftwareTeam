@@ -29,6 +29,12 @@ OP_MODIFY = "modify"
 OP_REMOVE = "remove"
 FEATURE_OPS = (OP_ADD, OP_MODIFY, OP_REMOVE)
 
+# A maintenance operation (not one of the user-facing feature commands): the garbage-collection
+# run fixes documentation inconsistencies, architecture violations, and technical debt found by
+# the scanner, without changing intended behaviour. It reuses the brownfield engine (shows the
+# existing software and re-emits only changed files), so it carries its own op marker too.
+OP_GC = "gc"
+
 # Header that marks the existing-software context block in a feature-mode prompt. It is a
 # stable sentinel: ``project.ExistingProject.brief`` emits it (and ``feature_brief`` appends
 # the baseline carrying it) and the dry-run stub keys off it to return the incremental
@@ -41,6 +47,7 @@ FEATURE_OP_MARKERS: dict[str, str] = {
     OP_ADD: "Treat the request above as a NEW feature to integrate",
     OP_MODIFY: "Treat the request above as a CHANGE to an existing feature",
     OP_REMOVE: "Treat the request above as the REMOVAL of an existing feature",
+    OP_GC: "Treat the request above as a GARBAGE-COLLECTION clean-up of existing software",
 }
 
 # Sentinel content a node can map a path to in its ``source_files`` delta to delete that file
@@ -76,6 +83,7 @@ class TeamState(TypedDict, total=False):
     # --- Input ---
     spec_path: str
     spec_text: str
+    spec_images: list[str]  # sample images the spec referenced (paths/URLs), passed to UX
     output_dir: str
     dry_run: bool
     mode: str  # BUILD_MODE (greenfield) or FEATURE_MODE (change existing software)
@@ -91,6 +99,13 @@ class TeamState(TypedDict, total=False):
     user_stories: str
     acceptance_criteria: str
     backlog: str
+    features: list[str]  # ordered, independently buildable features (built one at a time)
+
+    # --- Feature build loop (Code & Build) ---
+    feature_cursor: int  # index into ``features`` of the feature currently being built
+    feature_log: Annotated[list[str], operator.add]  # features built so far (UI / traceability)
+    build_stage: str  # "backend" | "frontend" — what a "changes" verdict loops back to
+    frontend_built: bool  # whether the frontend pass has run (so it is built/reviewed once)
 
     # --- UI/UX Designer ---
     ux_design: str  # written UI/UX description handed to the Tech Lead (no drawings)
@@ -133,6 +148,11 @@ class TeamState(TypedDict, total=False):
     incidents: str
     ops_report: str
 
+    # --- Garbage collection (maintenance run) ---
+    gc_findings: int  # number of issues the scan found (0 short-circuits the run)
+    gc_report: str  # the rendered scan report submitted to the Tech Lead
+    gc_request: str  # the Tech Lead's prioritised fix request (work order) for the engineer
+
     # --- Document & Handoff ---
     readme: str
     user_manual: str
@@ -148,17 +168,40 @@ class TeamState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], operator.add]
 
 
-def new_state(spec_path: str, spec_text: str, output_dir: str) -> TeamState:
-    """Build the initial state for a greenfield (``build``) run."""
+def new_state(
+    spec_path: str,
+    spec_text: str,
+    output_dir: str,
+    *,
+    images: tuple[str, ...] = (),
+) -> TeamState:
+    """Build the initial state for a greenfield (``build``) run.
+
+    Args:
+        spec_path: Human-readable label for the request (file path or ``<prompt>``).
+        spec_text: The spec / use-case text the team builds from.
+        output_dir: Workspace the generated project is written to.
+        images: Sample images the spec referenced (resolved paths / URLs), carried so the
+            Product Manager can hand them to the UI/UX Designer.
+
+    Returns:
+        The initial team state.
+    """
     return {
         "spec_path": spec_path,
         "spec_text": spec_text,
+        "spec_images": list(images),
         "output_dir": output_dir,
         "mode": BUILD_MODE,
         "needs_frontend": triage.needs_frontend(spec_text),
         "needs_backend": triage.needs_backend(spec_text),
         "needs_deployment": triage.needs_deployment(spec_text),
         "source_files": {},
+        "features": [],
+        "feature_cursor": 0,
+        "feature_log": [],
+        "build_stage": "backend",
+        "frontend_built": False,
         "review_iters": 0,
         "fix_iters": 0,
         "tests_passed": False,
@@ -176,6 +219,7 @@ def new_feature_state(
     source_files: dict[str, str],
     baseline: str,
     op: str = OP_ADD,
+    images: tuple[str, ...] = (),
 ) -> TeamState:
     """Build the initial state for an incremental (``feature``) run.
 
@@ -196,14 +240,52 @@ def new_feature_state(
             grounding every phase.
         op: The operation to perform: :data:`OP_ADD` (default), :data:`OP_MODIFY`, or
             :data:`OP_REMOVE`.
+        images: Sample images the change request referenced, passed to the UI/UX Designer.
 
     Returns:
         The initial team state for a feature run.
     """
-    state = new_state(spec_path, spec_text, output_dir)
+    state = new_state(spec_path, spec_text, output_dir, images=images)
     state["mode"] = FEATURE_MODE
     state["feature_op"] = op if op in FEATURE_OPS else OP_ADD
     state["source_files"] = dict(source_files)
     state["baseline"] = baseline
     state["current_phase"] = "feature"
+    return state
+
+
+def new_gc_state(
+    spec_path: str,
+    output_dir: str,
+    *,
+    source_files: dict[str, str],
+    baseline: str,
+) -> TeamState:
+    """Build the initial state for a garbage-collection (maintenance) run.
+
+    Like :func:`new_feature_state` but framed as a clean-up rather than a feature: the run is
+    put in :data:`FEATURE_MODE` with :data:`OP_GC`, the existing source is pre-seeded so fixes
+    accumulate on top of the real project, and the acceptance criteria pin the contract for a
+    clean-up — behaviour unchanged, tests green, reported issues resolved — so the Tech Lead's
+    verify gate (tests + lint) can judge it. The scanner fills in ``gc_findings`` / ``gc_report``.
+
+    Args:
+        spec_path: Human-readable label for the run (the workspace path).
+        output_dir: Workspace of the project to clean up.
+        source_files: The existing project's editable files (path -> content).
+        baseline: A rendered digest of the existing software, for grounding the fix.
+
+    Returns:
+        The initial team state for a garbage-collection run.
+    """
+    state = new_state(spec_path, "", output_dir)
+    state["mode"] = FEATURE_MODE
+    state["feature_op"] = OP_GC
+    state["source_files"] = dict(source_files)
+    state["baseline"] = baseline
+    state["acceptance_criteria"] = (
+        "The garbage-collection fixes must not change existing behaviour: all tests must "
+        "still pass, and the issues the scan reported should be resolved."
+    )
+    state["current_phase"] = "gc"
     return state
