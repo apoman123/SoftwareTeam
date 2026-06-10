@@ -223,27 +223,29 @@ bounded by an iteration cap so the run always terminates. A final **Document & H
 then has each role write the documentation it knows best.
 
 ```text
-START → PM(feature plan) → UX → TechLead(design) → QA(plan) → SWE(feature i)
-                                                                  │
-                  ┌──── changes (cap) ─────────────────→ TechLead(review:
-                  │                                       run tests + check spec)
-                SWE(feature i) ←── approve & more features ───────┤
-                                     approve & UI not built ─→ Frontend ─┐
-                                     approve & done                      │
-                                                  ▼                      │
-                                            DevOps(CI) ← (reviewed too) ─┘
-                                                  │
-                                                  ▼
-                                            QA(run tests)
-                                                  │
-                          ┌──────── fail (cap) ───┤
-                          ▼              pass      │
-                    SWE(fix) → QA(run tests)       ▼
-                                          DevOps(CD) → Operate
-                                                          │
-                                                          ▼
-  END ← PM(user manual) ← DevOps(infra docs) ← QA(test report) ← SWE(README)
+START → PM (feature plan) → [UX if needs_frontend] → TechLead (design:
+                                                       stack/architecture/API/schema)
+      → QA (test plan) → SWE (build feature i)
+                              │
+        ┌── changes (cap) ────┤ TechLead review  ← installs deps + runs tests + lint + checks spec
+        │                     │
+   SWE (feature i) ←─ approve & more features ───┘
+                     approve & UI not built ─→ Frontend (reviewed the same way)
+                     approve & done ─[DevOps CI if needs_deployment]─→ QA (run full suite)
+                              │
+        ┌── fail (cap) ───────┤
+        ▼          pass        ▼
+   SWE (fix) ──→ QA   [DevOps CD ─→ Operate, if needs_deployment]
+                              │
+                              ▼
+   END ← PM (user manual) ← [DevOps infra docs] ← QA (test report) ← SWE (README)
 ```
+
+The bracketed `[…]` phases are **capability-aware** — deterministic triage (`triage.py`) sets
+`needs_frontend` / `needs_backend` / `needs_deployment`, and the supervisor skips the phases a
+project does not need: no UX/Frontend for a pure API, and no containerisation/CI-CD/Operate/infra
+docs for a library, CLI, or script. The three feedback loops (review changes, the per-feature
+build loop, and failing tests) are each bounded by an iteration cap so the run always terminates.
 
 Each character reads the shared **TeamState blackboard** (`src/software_team/state.py`)
 and contributes its artifacts.
@@ -626,3 +628,4 @@ Ruff and configured in `pyproject.toml` under `[tool.ruff]`:
 uv run ruff check .      # lint (naming, imports, docstrings, likely bugs)
 uv run ruff format .     # auto-format
 ```
+
