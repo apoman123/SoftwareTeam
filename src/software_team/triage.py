@@ -63,20 +63,48 @@ _FRONTEND_OPTOUT: tuple[str, ...] = (
     "backend-only",
 )
 
-# Explicit "no backend" phrasings — a product that is purely a static site / client app.
+# Explicit, unambiguous "no backend" phrasings — a product that is purely a client app.
+# These always win: they are direct statements that there is no server-side code to build.
 _BACKEND_OPTOUT: tuple[str, ...] = (
     "no backend",
     "no back-end",
     "without a backend",
     "without backend",
     "no server",
-    "serverless",
     "frontend only",
     "front-end only",
     "frontend-only",
     "client-side only",
+)
+
+# Weaker "looks like a static/client-only product" phrasings. Unlike the opt-outs above
+# these are *ambiguous*: "static site" matches "Static Site Generation (SSG)", a frontend
+# rendering technique that is routinely paired with a real backend (an API, a form handler).
+# So a static-frontend hint suppresses the backend only when nothing explicitly names one —
+# an explicit backend signal (``_BACKEND_POSITIVE``) overrides it.
+_STATIC_FRONTEND_HINTS: tuple[str, ...] = (
     "static site",
     "static website",
+    "serverless",
+)
+
+# Explicit signals that the product has server-side code to build, used to override an
+# ambiguous static-frontend hint. Deliberately narrow (the literal word "backend" and named
+# backend frameworks) so it does not fire on a genuinely backend-free static site.
+_BACKEND_POSITIVE: tuple[str, ...] = (
+    "backend",
+    "back-end",
+    "fastapi",
+    "django",
+    "flask",
+    "express",
+    "nestjs",
+    "rails",
+    "laravel",
+    "microservice",
+    "web service",
+    "rest api",
+    "graphql",
 )
 
 # Explicit "no deployment" phrasings — keep it local, don't containerise/ship it.
@@ -162,16 +190,25 @@ def needs_frontend(spec_text: str) -> bool:
 def needs_backend(spec_text: str) -> bool:
     """Decide whether the spec calls for backend/server-side code.
 
-    Defaults to True (most products — including libraries and CLIs — are backend code);
-    only an explicit opt-out ("no backend", "static site", "frontend only") turns it off.
+    Defaults to True (most products — including libraries and CLIs — are backend code). An
+    explicit opt-out ("no backend", "frontend only") turns it off. A weaker static-frontend
+    hint ("static site", "serverless") turns it off too, *unless* the spec also names a
+    backend — because "Static Site Generation (SSG)" describes how the UI is rendered and is
+    commonly paired with a real backend (e.g. a React SSG frontend with a FastAPI API). In
+    that case the explicit backend signal wins, so the Software Engineer is not skipped.
 
     Args:
         spec_text: The raw spec / feature request.
 
     Returns:
-        False only for an explicitly frontend-only / static product; True otherwise.
+        False only for an explicitly frontend-only / static product with no backend signal;
+        True otherwise.
     """
-    return not _mentions(spec_text, _BACKEND_OPTOUT)
+    if _mentions(spec_text, _BACKEND_OPTOUT):
+        return False
+    if _mentions(spec_text, _STATIC_FRONTEND_HINTS):
+        return _mentions(spec_text, _BACKEND_POSITIVE)
+    return True
 
 
 def needs_deployment(spec_text: str) -> bool:

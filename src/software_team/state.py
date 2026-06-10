@@ -153,6 +153,10 @@ class TeamState(TypedDict, total=False):
     gc_report: str  # the rendered scan report submitted to the Tech Lead
     gc_request: str  # the Tech Lead's prioritised fix request (work order) for the engineer
 
+    # --- Debugging (focused test -> diagnose -> fix run) ---
+    bug_report: str  # optional reported symptom guiding the diagnosis (empty if none given)
+    debug_report: str  # the engineer's debug write-up: symptom, root cause, fix, final status
+
     # --- Document & Handoff ---
     readme: str
     user_manual: str
@@ -288,4 +292,41 @@ def new_gc_state(
         "still pass, and the issues the scan reported should be resolved."
     )
     state["current_phase"] = "gc"
+    return state
+
+
+def new_debug_state(
+    spec_path: str,
+    output_dir: str,
+    *,
+    source_files: dict[str, str],
+    baseline: str,
+    bug_report: str = "",
+) -> TeamState:
+    """Build the initial state for a focused debugging run on already-developed software.
+
+    Unlike the build pipeline's bug-fix loop (which only fires when QA's freshly written
+    tests go red), this drives a direct ``test -> diagnose -> fix`` loop over an existing
+    workspace: the existing source is pre-seeded so fixes accumulate on top of the real
+    project, and an optional reported ``bug_report`` symptom guides the diagnosis even when
+    the suite is green. It re-uses the brownfield framing (existing software, re-emit only
+    changed files) without re-running planning, architecture, or deployment.
+
+    Args:
+        spec_path: Human-readable label for the run (the workspace path).
+        output_dir: Workspace of the project to debug.
+        source_files: The existing project's editable files (path -> content).
+        baseline: A rendered digest of the existing software, for grounding the fix.
+        bug_report: An optional reported symptom to diagnose; empty to just fix red tests.
+
+    Returns:
+        The initial team state for a debugging run.
+    """
+    state = new_state(spec_path, bug_report, output_dir)
+    state["mode"] = FEATURE_MODE
+    state["feature_op"] = OP_ADD
+    state["source_files"] = dict(source_files)
+    state["baseline"] = baseline
+    state["bug_report"] = bug_report
+    state["current_phase"] = "debug"
     return state

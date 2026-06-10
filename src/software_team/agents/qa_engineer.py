@@ -102,8 +102,11 @@ async def qa_test_node(state: TeamState) -> TeamState:
     )
 
     # 2) Run every component's suite (backend at the root, plus frontend/ when present).
-    #    Offloaded to a thread so the (blocking) subprocess run never stalls the event loop.
-    outcome = await asyncio.to_thread(shell.run_test_suites, out)
+    #    Install each component's deps first (live runs) so its third-party imports resolve;
+    #    offloaded to a thread so the (blocking) subprocess run never stalls the event loop.
+    outcome = await asyncio.to_thread(
+        shell.run_test_suites, out, install=not state.get("dry_run", False)
+    )
     passed = outcome.passed
     verdict = "[green]passed[/green]" if passed else "[red]failed[/red]"
     ran = ", ".join(run.component for run in outcome.runs) or "none"

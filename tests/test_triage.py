@@ -1,4 +1,4 @@
-"""Tests for deterministic project triage (needs_frontend / needs_deployment)."""
+"""Tests for deterministic project triage (needs_frontend / needs_backend / needs_deployment)."""
 
 from software_team import triage
 from software_team.state import new_state
@@ -40,6 +40,18 @@ def test_backend_default_true_even_for_libraries():
 def test_no_backend_for_static_or_frontend_only():
     assert not triage.needs_backend("A static website with a few pages.")
     assert not triage.needs_backend("Build a React app, frontend only.")
+
+
+def test_backend_signal_overrides_static_site_generation_hint():
+    # "Static Site Generation (SSG)" is a frontend rendering technique, not a "no backend"
+    # statement: a spec that pairs an SSG frontend with a real backend must still build it.
+    spec = (
+        "A React frontend using Static Site Generation (SSG) and a Python FastAPI backend "
+        "that handles contact form submissions."
+    )
+    assert triage.needs_backend(spec)
+    # The frontend is still detected, so the team builds both halves.
+    assert triage.needs_frontend(spec)
 
 
 def test_negated_phrases_override_keyword_matches():

@@ -423,6 +423,34 @@ REMOVE_DELETES = ("tests/test_priority.py",)
 
 GC_FIX_REEMIT = {"app/service.py": _SERVICE_PY}
 
+# --------------------------------------------------------------------------- #
+# Debugging clean-up (dry-run)
+#
+# The focused `software-team debug` loop runs the existing suite, then re-emits the fixed
+# file. Deterministically, the canned fix restores the known-good service module, so a
+# regression planted in `app/service.py` is repaired and the suite goes green again — the
+# loop exercises test → diagnose → fix → re-test. Live mode replaces this with a real
+# diagnosis of whatever the suite (and the reported symptom) surfaced.
+# --------------------------------------------------------------------------- #
+
+DEBUG_FIX_REEMIT = {"app/service.py": _SERVICE_PY}
+
+_DEBUG_REPORT = """\
+# Debug Report — Task API
+
+## Reported symptom
+See the run's bug report (or none — the session fixed failing tests).
+
+## Root cause
+A regression in `app/service.py` made the suite go red.
+
+## Fix
+Restored the corrected `app/service.py` so the business logic matches its tests again.
+
+## Final test status
+All tests pass after the fix.
+"""
+
 _GC_REQUEST_DOC = """\
 # Garbage-Collection Fix Request
 
@@ -1335,6 +1363,12 @@ def canned_response(role: str, prompt: str) -> str:
         if FEATURE_BRIEF_HEADER in prompt:
             return file_blocks(FEATURE_FILES)
         return file_blocks(SWE_FILES)
+    if role == "software_engineer_debug":
+        # Focused debugging fix: restore the known-good service so a planted regression is
+        # repaired and the suite goes green again.
+        return file_blocks(DEBUG_FIX_REEMIT)
+    if role == "debug_report":
+        return _DEBUG_REPORT
     if role == "frontend_engineer":
         return file_blocks(FRONTEND_FILES)
     if role == "qa_engineer":

@@ -44,6 +44,12 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from .agents.debugger import (
+    debug_report_node,
+    debug_tests_node,
+    debugger_fix_node,
+    route_after_debug_tests,
+)
 from .agents.devops_sre import (
     devops_cd_node,
     devops_ci_node,
@@ -195,5 +201,35 @@ def build_gc_graph() -> CompiledStateGraph:
     builder.add_edge("tech_lead_gc_request", "gc_fix")
     builder.add_edge("gc_fix", "tech_lead_review")
     builder.add_conditional_edges("tech_lead_review", route_after_gc_review, GC_REVIEW_ROUTES)
+
+    return builder.compile()
+
+
+def build_debug_graph() -> CompiledStateGraph:
+    """Wire the focused debugging flow (run tests → diagnose → fix → re-test → report).
+
+    A small, separate graph for the ``debug`` command: point the team at an existing
+    workspace and have it run the project's own test suite, diagnose the root cause (guided
+    by any reported symptom), fix it, and re-run until the suite is green — without re-doing
+    planning, architecture, or deployment. The loop is bounded by the bug-fix cap so it
+    always terminates, then writes a debug report honestly noting anything still failing.
+
+        START → debug_tests ─red / reported bug?─→ debugger_fix ─┐
+                   │  └─green & cap hit──→ debug_report → END     │
+                   └──────────────── re-test ─────────────────────┘
+    """
+    builder = StateGraph(TeamState)
+    builder.add_node("debug_tests", debug_tests_node)
+    builder.add_node("debugger_fix", debugger_fix_node)
+    builder.add_node("debug_report", debug_report_node)
+
+    builder.add_edge(START, "debug_tests")
+    builder.add_conditional_edges(
+        "debug_tests",
+        route_after_debug_tests,
+        {"debugger_fix": "debugger_fix", "debug_report": "debug_report"},
+    )
+    builder.add_edge("debugger_fix", "debug_tests")
+    builder.add_edge("debug_report", END)
 
     return builder.compile()

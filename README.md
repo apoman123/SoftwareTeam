@@ -25,10 +25,13 @@ Highlights:
 - **Grounded in current facts.** Every character can search the web for what it needs —
   current library APIs, today's stable versions, fresh best practices — and fold the
   findings into its work.
-- **Builds new or changes existing.** `run` builds a project from scratch; `feature`,
-  `modify`, and `remove` change software the team already developed — adding a new feature,
-  changing how an existing one behaves, or taking one out (deleting its files) — re-running
-  the whole lifecycle so the change is reviewed, regression-tested, redeployed, and documented.
+- **Builds new, changes existing, and maintains.** `run` builds a project from scratch;
+  `feature`, `modify`, and `remove` change software the team already developed — adding a new
+  feature, changing how an existing one behaves, or taking one out (deleting its files) —
+  re-running the whole lifecycle so the change is reviewed, regression-tested, redeployed, and
+  documented. Two maintenance commands round it out: `gc` scans an existing project for rot and
+  fixes it under the Tech Lead, and `debug` runs the project's own tests, diagnoses a bug, and
+  fixes it until the suite is green.
 - **Runs offline.** A `--dry-run` mode produces a complete, test-passing example with no
   model server, provider package, or network at all.
 - **Async & observable.** Every character infers asynchronously (`astream`/`ainvoke`) and
@@ -207,11 +210,14 @@ Sources for the practices baked into the skill bodies:
 The Tech Lead acts as supervisor. The team builds **one feature at a time**: the Product
 Manager decomposes the spec into an ordered **feature plan**, and the Software Engineer
 builds each feature in turn. The Tech Lead then *verifies* each feature as the quality gate
-— it **runs the project's test suite** (a failing suite forces changes, so "is it without
-bugs?" is checked, not assumed), **runs the project's linter** and turns each diagnostic into
-a constructive fix suggestion for the engineer (advisory — lint guides but does not by itself
-block), and judges the code against its acceptance criteria — and the loop only advances to
-the next feature once the current one is approved. Three feedback loops
+— it **installs the project's dependencies and runs its test suite** (a failing suite forces
+changes, so "is it without bugs?" is checked, not assumed; installing the deps first — into
+an isolated per-workspace virtualenv for Python, `npm install` for a UI — is what lets the
+generated project's FastAPI/React imports actually resolve, so the gate runs the tests
+instead of erroring on a missing dependency), **runs the project's linter** and turns each
+diagnostic into a constructive fix suggestion for the engineer (advisory — lint guides but
+does not by itself block), and judges the code against its acceptance criteria — and the loop
+only advances to the next feature once the current one is approved. Three feedback loops
 (review changes, the feature loop, failing tests) bounce work back to the engineer, each
 bounded by an iteration cap so the run always terminates. A final **Document & Handoff** phase
 then has each role write the documentation it knows best.
@@ -276,6 +282,10 @@ uv run software-team modify  --into workspace --prompt "Make priorities support 
 uv run software-team remove  --into workspace --prompt "Remove the task priority feature"
 #   …or from a spec file, writing the updated copy elsewhere (leaving the original intact):
 uv run software-team feature --into workspace --spec examples/feature_priority.md --out workspace2
+
+# Maintain software the team built — clean up accumulated rot, or debug a bug you hit running it:
+uv run software-team gc    --into workspace --dry-run
+uv run software-team debug --into workspace --bug "empty titles are accepted" --dry-run
 
 # Other backends (set SWTEAM_LLM_PROVIDER, install the matching extra):
 #   uv sync --extra openai     && SWTEAM_LLM_PROVIDER=openai     OPENAI_API_KEY=...     uv run software-team run -s examples/sample_spec.md
@@ -357,8 +367,8 @@ terminal (CI) so it stays scriptable. The `elicit-requirements` skill is adapted
 
 ### Building new vs. changing existing software
 
-There are four build commands (all accept the same `--spec`/`--prompt` input) plus a `gc`
-maintenance command (described below):
+There are four build commands (all accept the same `--spec`/`--prompt` input) plus two
+maintenance commands, `gc` and `debug` (described below):
 
 - **`run`** — greenfield. Build a brand-new project from the request.
 - **`feature`**, **`modify`**, **`remove`** — brownfield/incremental. Point `--into` at a
@@ -415,6 +425,27 @@ fixes; and the same Tech Lead review (tests + linter) **verifies** the clean-up,
 the bug-fix cap. A clean project is reported and left untouched. The Tech Lead's tool-backed
 `collect-garbage` skill drives the scan + triage.
 
+### Debugging (`debug`) — run the tests, diagnose the root cause, fix until green
+
+The build pipeline's bug-fix loop only fires when QA's *own* freshly written tests go red. A
+sixth command is for when you **run the generated project yourself and hit a bug**: point the
+team at the workspace and the 💻 Software Engineer runs the project's own test suite, diagnoses
+the root cause (guided by an optional reported symptom), fixes it, and re-runs until the suite
+is green — **without** re-doing planning, architecture, or deployment:
+
+```bash
+uv run software-team debug --into workspace                                  # fix in place
+uv run software-team debug --into workspace --bug "empty titles are accepted" # with a symptom
+uv run software-team debug --into workspace --out workspace-fixed             # or a fixed copy
+```
+
+When a reported symptom is not yet covered by a test, the engineer **first adds a test that
+reproduces it**, then fixes the code so that test passes. The focused `test → diagnose → fix`
+loop (`src/software_team/agents/debugger.py`, wired by `graph.build_debug_graph`) is bounded by
+`SWTEAM_MAX_FIX_ITERS`, so it always terminates and **honestly reports anything still failing**
+in `docs/debug_report.md` (the symptom, the root cause, the fix, and the final test status). In
+`--dry-run` it deterministically repairs a planted regression in the demo Task API.
+
 ### Output (`workspace/`)
 
 ```text
@@ -432,6 +463,8 @@ monitoring/              # prometheus.yml, alerts.yml
 docs/                    # backlog, ux, architecture, openapi, schema,
                          # test plan, runbook, operations report, security_review, and the
                          # handoff docs: test_report, infrastructure, user_manual, release_notes
+                         # (maintenance runs add garbage_collection.md / gc_request.md for gc,
+                         #  and debug_report.md for debug)
 ```
 
 ## Configuration
@@ -529,11 +562,18 @@ no-ops, so behaviour (and `--dry-run`) is unchanged.
   and the infrastructure docs. Classification is keyword-based (no LLM, with explicit
   "no X" negation handling) so routing is reproducible and dry-run-safe; defaults are
   conservative (assume a deployable backend, no UI).
-- **Multi-component test gate.** QA runs every testable component — the backend at the root
-  and the UI under `frontend/` — each with its own detected test command, and the gate
-  passes only if all suites that ran passed. A component whose toolchain or dependencies are
-  not installed (e.g. `frontend/` without `node_modules`) is **skipped, never failed**, so
-  the gate works in a bare environment yet still runs everything it can.
+- **Multi-component test gate.** QA (and the Tech Lead's review, and the `debug` loop) runs
+  every testable component — the backend at the root and the UI under `frontend/` — each with
+  its own detected test command, and the gate passes only if all suites that ran passed. On a
+  live run it **installs each component's dependencies first** so the suite can actually run:
+  the generated project's third-party imports (FastAPI, pydantic, React, …) are otherwise
+  absent from the team's own environment, which would make every gate fail. Python deps go
+  into an isolated per-workspace `.venv` (so the team's environment is never polluted, and
+  the venv is reused across review passes), `frontend/` gets `npm install`, and compiled
+  toolchains (Go, Rust, …) fetch their deps during the test run. A component whose **toolchain**
+  is missing (exit 127) is still **skipped, never failed**, so the gate never blocks on an
+  unavailable runtime. (In `--dry-run` nothing is installed — the offline canned project's
+  unit tests are framework-free — so dry runs stay hermetic.)
 - **Verifiable by construction.** Business logic is kept framework-free, so generated unit
   tests are fast and stable; the Python/FastAPI E2E tests `importorskip` when FastAPI is
   absent.
@@ -558,8 +598,8 @@ src/software_team/
   ui.py          # console reporting
   skills/        # SKILL.md library (loader, registry, common tools incl. web search + security-audit engine)
   triage.py      # deterministic spec classifier -> needs_frontend / needs_backend / needs_deployment
-  agents/        # the characters (one file each, incl. frontend_engineer) + shared node helpers
-  graph.py       # LangGraph StateGraph wiring the phases + loops
+  agents/        # the characters (one file each, incl. frontend_engineer, debugger) + shared node helpers
+  graph.py       # LangGraph StateGraph wiring the phases + loops (build, gc, debug graphs)
   main.py        # Typer CLI
 tests/           # framework tests (routers, skills, full dry-run pipeline, feature mode)
 examples/        # sample_spec.md (greenfield), feature_priority.md (incremental)

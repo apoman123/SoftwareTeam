@@ -90,6 +90,10 @@ ROLE_TIERS: dict[str, str] = {
     "qa_planning": "narrative",
     "software_engineer": "coder",
     "software_engineer_fix": "coder",
+    # Focused debugging run (test -> diagnose -> fix) — diagnosis writes code, so the coder
+    # tier; its closing write-up is prose, so the narrative tier.
+    "software_engineer_debug": "coder",
+    "debug_report": "narrative",
     "frontend_engineer": "coder",
     "devops_ci": "narrative",
     "devops_cd": "narrative",

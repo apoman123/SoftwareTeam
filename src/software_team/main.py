@@ -34,7 +34,7 @@ from rich.markdown import Markdown
 
 from . import elicit, intake, observability, project
 from .config import SETTINGS
-from .graph import build_gc_graph, build_graph
+from .graph import build_debug_graph, build_gc_graph, build_graph
 from .skills.common import filesystem
 from .skills.registry import skills_catalog
 from .state import (
@@ -42,6 +42,7 @@ from .state import (
     OP_MODIFY,
     OP_REMOVE,
     TeamState,
+    new_debug_state,
     new_feature_state,
     new_gc_state,
     new_state,
@@ -317,6 +318,62 @@ def gc(
 
 
 @app.command()
+def debug(
+    into: Path = _INTO_OPTION,
+    bug: str | None = typer.Option(
+        None, "--bug", "-b", help="Describe the bug/symptom to diagnose (optional)"
+    ),
+    out: Path | None = _OUT_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Debug already-developed software: run its tests, diagnose the root cause, and fix it.
+
+    Point ``--into`` at a previous run's workspace. The team runs the project's own test
+    suite, diagnoses the root cause (guided by an optional ``--bug`` symptom), fixes it, and
+    re-runs until the suite is green — looping within the bug-fix cap and honestly reporting
+    anything still failing in ``docs/debug_report.md``. Unlike a full ``feature`` run it does
+    not re-do planning, architecture, or deployment. By default the project is fixed in place;
+    pass ``--out`` to write the fixed copy elsewhere, leaving the original untouched.
+    """
+    try:
+        existing = project.load(str(into))
+    except project.ProjectError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    target = out or into
+    target.mkdir(parents=True, exist_ok=True)
+    if target.resolve() != into.resolve():
+        project.mirror(existing, str(target))
+
+    symptom = (bug or "").strip()
+    reported = f"bug=[green]{symptom}[/green] · " if symptom else ""
+    console.rule(
+        f"[bold]Software Team · debug[/bold] · into=[green]{into}[/green] · "
+        f"{reported}{_mode_banner(dry_run)}"
+    )
+
+    state = new_debug_state(
+        str(into),
+        str(target),
+        source_files=existing.source_files,
+        baseline=existing.brief(),
+        bug_report=symptom,
+    )
+    state["dry_run"] = dry_run
+
+    observability.configure_langsmith()
+    config = observability.run_config(
+        f"software-team:debug:{into}",
+        tags=["debug"],
+        metadata={"swteam.command": "debug", "swteam.dry_run": dry_run},
+    )
+    config["recursion_limit"] = SETTINGS.graph_recursion_limit
+    final = asyncio.run(build_debug_graph().ainvoke(state, config=config))
+
+    _debug_summary(final, target)
+
+
+@app.command()
 def spec(
     spec: Path | None = typer.Option(
         None,
@@ -402,6 +459,20 @@ def _gc_summary(state: TeamState, out: Path) -> None:
         "See [green]docs/garbage_collection.md[/green] (scan) and "
         "[green]docs/gc_request.md[/green] (Tech Lead fix request)."
     )
+    files = filesystem.list_tree(str(out))
+    console.print(f"\n[bold]{len(files)} files in[/bold] [green]{out}/[/green].")
+
+
+def _debug_summary(state: TeamState, out: Path) -> None:
+    """Print a debugging summary: the symptom, fix passes, final test status, and artifacts."""
+    console.rule("[bold]Debugging complete[/bold]")
+    symptom = (state.get("bug_report") or "").strip() or "none (fixed failing tests)"
+    status = "[green]passed[/green]" if state.get("tests_passed") else "[red]still failing[/red]"
+    console.print(
+        f"Reported symptom: [cyan]{symptom}[/cyan] · Fix passes: "
+        f"[cyan]{state.get('fix_iters', 0)}[/cyan] · Tests: {status}"
+    )
+    console.print("See [green]docs/debug_report.md[/green] for the root cause and the fix.")
     files = filesystem.list_tree(str(out))
     console.print(f"\n[bold]{len(files)} files in[/bold] [green]{out}/[/green].")
 

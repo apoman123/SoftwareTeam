@@ -78,18 +78,42 @@ def read_file(output_dir: str, rel_path: str) -> str:
     return target.read_text(encoding="utf-8") if target.exists() else ""
 
 
+# Tooling/cache and installed-dependency directories that are never project source. They are
+# excluded from the tree so artifact listings stay clean and, crucially, so loading an existing
+# project for an incremental run never ingests an installed dependency tree (e.g. the ``.venv``
+# the test gate creates, or ``node_modules``) as if it were the team's own code.
+_IGNORE_DIRS = frozenset(
+    {
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".venv",
+        "venv",
+        "node_modules",
+        "vendor",
+        "target",
+        ".git",
+    }
+)
+
+
 def list_tree(output_dir: str) -> list[str]:
-    """Return sorted relative paths of every file under output_dir."""
+    """Return sorted relative paths of every file under output_dir.
+
+    Skips compiled artifacts and the tooling/dependency directories in :data:`_IGNORE_DIRS`
+    (caches, the test gate's ``.venv``, ``node_modules``, …) so the listing is the project's
+    own files, not its installed dependencies.
+    """
     base = Path(output_dir)
     if not base.exists():
         return []
-    ignore = {"__pycache__", ".pytest_cache"}
     return sorted(
         str(path.relative_to(base))
         for path in base.rglob("*")
         if path.is_file()
         and path.suffix != ".pyc"
-        and not any(part in ignore for part in path.parts)
+        and not any(part in _IGNORE_DIRS for part in path.parts)
     )
 
 

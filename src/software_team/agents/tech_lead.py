@@ -124,7 +124,8 @@ async def tech_lead_review_node(state: TeamState) -> TeamState:
     # works and is clean, not just how it reads. Offloaded to threads so the blocking
     # subprocesses never stall the loop.
     out = output_dir(state)
-    outcome = await asyncio.to_thread(shell.run_test_suites, out)
+    install = not state.get("dry_run", False)
+    outcome = await asyncio.to_thread(shell.run_test_suites, out, install=install)
     lint_outcome = await asyncio.to_thread(lint.run_linters, out)
     tests_failed = any(not run.result.ok for run in outcome.runs)
     ran = ", ".join(run.component for run in outcome.runs) or "none"
