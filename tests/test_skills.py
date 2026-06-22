@@ -121,14 +121,14 @@ def test_shared_skills_loaded_by_mapped_characters_only():
     for role, names in SHARED_SKILLS.items():
         assert set(names) <= loaded[role], f"{role} missing its shared skills"
 
-    # The GitLab + Jenkins CI/CD skills land on DevOps; quality/review skills on the lead.
-    assert {"jenkins-expert", "ci-cd-and-automation", "gitlab-pipeline-watch"} <= loaded[
+    # The GitHub Actions CI/CD skills land on DevOps; quality/review skills on the lead.
+    assert {"github-actions-expert", "ci-cd-and-automation", "actions-workflow-watch"} <= loaded[
         "devops_sre"
     ]
-    assert {"code-review-and-quality", "mr-review"} <= loaded["tech_lead"]
+    assert {"code-review-and-quality", "pr-review"} <= loaded["tech_lead"]
 
-    # `glab` is shared (no duplication on disk) by the engineer and DevOps.
-    assert "glab" in loaded["software_engineer"] and "glab" in loaded["devops_sre"]
+    # `gh` is shared (no duplication on disk) by the engineer and DevOps.
+    assert "gh" in loaded["software_engineer"] and "gh" in loaded["devops_sre"]
 
     # Characters not in the mapping pick up no shared skills.
     pm = {s.name for s in load_character_skills("product_manager")}
@@ -142,5 +142,5 @@ def test_code_authors_still_load_foundation_before_shared_skills():
     names = [s.name for s in load_character_skills("devops_sre")]
     assert names[:2] == list(FOUNDATION_SKILLS)
     # Shared skills compose after the role skills; the DevSecOps set lands at the tail.
-    assert "glab" in names
+    assert "gh" in names
     assert names[-1] == "kubernetes-hardening"

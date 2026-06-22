@@ -24,27 +24,25 @@ from .base import (
 ROLE = "devops_sre"
 
 CI_SYSTEM = """You are a DevOps engineer practising DevSecOps. Produce a hardened Dockerfile
-and a GitLab CI/CD pipeline integrated with Jenkins:
+and a GitHub Actions CI workflow:
 - Dockerfile — pin a slim base image (no `:latest`), run as a non-root `USER`, add a
   `HEALTHCHECK`, and bake in no secrets.
-- .gitlab-ci.yml — stages that install deps, lint and run the project's test suite on merge
-  requests, plus a `security` stage that shifts security left: a SAST scan (e.g.
-  Semgrep/Bandit), a dependency scan appropriate to the stack (e.g. pip-audit / npm audit /
-  govulncheck), and a Trivy image+config scan that fails on HIGH/CRITICAL; then a final
-  `trigger-jenkins` job that calls Jenkins' remote build API (buildWithParameters) using
-  masked GitLab CI/CD variables ($JENKINS_URL, $JENKINS_TOKEN).
-- Jenkinsfile — a Declarative pipeline (agent, stages: Checkout, Install, Lint, Test) that
-  pulls secrets from the Jenkins credential store and reports status back to the GitLab MR.
-GitLab CI owns the merge-request gate; Jenkins runs the heavier build. A red stage blocks
-the merge. Emit files as <<<FILE path >>> ... <<<END>>> blocks, no markdown fences."""
+- .github/workflows/ci.yml — runs on `pull_request` and `push` to `main`, with jobs that
+  install deps, lint, and run the project's test suite, plus security jobs that shift
+  security left: a SAST scan (e.g. Semgrep/Bandit), a dependency scan appropriate to the
+  stack (e.g. pip-audit / npm audit / govulncheck), and a Trivy image+config scan that
+  fails on HIGH/CRITICAL. Read any secrets from `${{ secrets.* }}`, set least-privilege
+  `permissions:`, pin actions to a version, and cache dependencies.
+The CI workflow is the pull-request gate: a red job blocks the merge (make the checks
+branch-protection rules). Emit files as <<<FILE path >>> ... <<<END>>> blocks, no markdown
+fences."""
 
-CD_SYSTEM = """You are an SRE practising DevSecOps. Extend the GitLab + Jenkins CI/CD
-pipeline with deployment, plus Terraform and Kubernetes manifests:
-- .gitlab-ci.yml — add a `deploy` stage (manual gate to production) that triggers the
-  Jenkins deploy job; keep the existing lint/test/security/trigger-jenkins stages.
-- Jenkinsfile — add Build image and Deploy stages with a safe rollout (canary or
-  blue-green) and an automatic rollback path on a failed health check; generate and sign an
-  SBOM for the built image.
+CD_SYSTEM = """You are an SRE practising DevSecOps. Add a GitHub Actions deploy workflow,
+plus Terraform and Kubernetes manifests:
+- .github/workflows/cd.yml — triggers on `push` to `main` (and `workflow_dispatch`); gate
+  production behind an `environment:` with required reviewers. Build the image once,
+  generate (and optionally sign) an SBOM, then deploy with a safe rollout (canary or
+  blue-green) and an automatic rollback step (`if: failure()`) on a failed health check.
 - terraform/main.tf — Infrastructure as Code.
 - k8s/deployment.yaml and k8s/service.yaml — a readiness probe and a hardened pod/container
   securityContext (runAsNonRoot, allowPrivilegeEscalation: false, capabilities drop ALL,
@@ -58,13 +56,13 @@ config (monitoring/prometheus.yml), alert rules for error-rate and latency
 (docs/runbook.md). Emit files as <<<FILE path >>> ... <<<END>>> blocks, no fences."""
 
 DOCS_SYSTEM = """You are a DevOps/SRE engineer documenting the infrastructure for on-call
-and platform engineers. Explain where and how the service is deployed: how the GitLab
-CI/CD pipeline and the Jenkins pipeline fit together (GitLab gates the merge request and
-triggers Jenkins for the heavier build/deploy), what each stage does, the container image,
-the Terraform-managed cloud resources, the Kubernetes Deployment and Service, the required
-environment variables / CI-CD variables / Jenkins credentials and where they are stored
-(never secrets in git), and the rollout/rollback strategy. Output GitHub-flavoured
-markdown only (no file blocks)."""
+and platform engineers. Explain where and how the service is deployed: how the GitHub
+Actions CI and CD workflows fit together (CI gates the pull request; CD builds and deploys
+on `main` behind an environment approval), what each job does, the container image, the
+Terraform-managed cloud resources, the Kubernetes Deployment and Service, the required
+environment variables / GitHub Actions secrets and where they are stored (never secrets in
+git), and the rollout/rollback strategy. Output GitHub-flavoured markdown only (no file
+blocks)."""
 
 
 async def devops_ci_node(state: TeamState) -> TeamState:
@@ -72,12 +70,12 @@ async def devops_ci_node(state: TeamState) -> TeamState:
     ui.announce(
         ROLE,
         "code",
-        "Containerising and wiring up GitLab CI + Jenkins with security scans",
+        "Containerising and wiring up GitHub Actions CI with security scans",
         [
             "containerize-service",
             "build-ci-pipeline",
             "ci-cd-and-automation",
-            "jenkins-expert",
+            "github-actions-expert",
             "container-hardening",
             "sast-scanning",
             "dependency-scanning",
@@ -91,24 +89,23 @@ async def devops_ci_node(state: TeamState) -> TeamState:
         character=ROLE,
         system_prompt=CI_SYSTEM,
         user_prompt=(
-            f"Containerise this {stack} service and set up CI with GitLab integrated with "
-            "Jenkins. Provide a Dockerfile suited to the stack (correct base image plus "
-            "build and run commands for it), a .gitlab-ci.yml that installs deps, lints and "
-            "runs the test suite then triggers Jenkins, and a Jenkinsfile."
+            f"Containerise this {stack} service and set up CI with GitHub Actions. Provide a "
+            "Dockerfile suited to the stack (correct base image plus build and run commands "
+            "for it) and a .github/workflows/ci.yml that installs deps, lints, runs the test "
+            "suite, and runs the SAST, dependency, and image security scans."
         )
         + feature_brief(state),
         research_queries=[
-            "latest GitLab CI/CD .gitlab-ci.yml syntax and stages 2026",
-            "latest Jenkins declarative pipeline Jenkinsfile best practices 2026",
-            "trigger Jenkins job from GitLab CI remote build API 2026",
+            "latest GitHub Actions workflow syntax and jobs 2026",
+            "GitHub Actions CI lint test python best practices 2026",
+            "GitHub Actions Trivy SAST dependency scan security gate 2026",
             f"latest official Docker base image tags for {stack} 2026",
         ],
     )
     return {
         "dockerfile": files.get("Dockerfile", ""),
-        "ci_config": files.get(".gitlab-ci.yml", ""),
-        "gitlab_ci": files.get(".gitlab-ci.yml", ""),
-        "jenkinsfile": files.get("Jenkinsfile", ""),
+        "ci_config": files.get(".github/workflows/ci.yml", ""),
+        "ci_workflow": files.get(".github/workflows/ci.yml", ""),
         "source_files": files,
         "current_phase": "code",
     }
@@ -119,10 +116,10 @@ async def devops_cd_node(state: TeamState) -> TeamState:
     ui.announce(
         ROLE,
         "deploy",
-        "Building GitLab + Jenkins CD pipeline, IaC and hardened Kubernetes manifests",
+        "Building GitHub Actions CD workflow, IaC and hardened Kubernetes manifests",
         [
             "build-cd-pipeline",
-            "jenkins-expert",
+            "github-actions-expert",
             "write-infrastructure-code",
             "write-k8s-manifests",
             "kubernetes-hardening",
@@ -135,23 +132,23 @@ async def devops_cd_node(state: TeamState) -> TeamState:
         character=ROLE,
         system_prompt=CD_SYSTEM,
         user_prompt=(
-            "Set up continuous deployment for the containerised service: add a deploy stage "
-            "to the GitLab pipeline that triggers the Jenkins deploy job with a safe rollout "
-            "(canary or blue-green) and rollback, plus Terraform and Kubernetes manifests "
+            "Set up continuous deployment for the containerised service: add a "
+            ".github/workflows/cd.yml that builds the image, generates an SBOM, and deploys "
+            "on `main` behind an environment approval with a safe rollout (canary or "
+            "blue-green) and automatic rollback, plus Terraform and Kubernetes manifests "
             "(deployment with readiness probe, service)."
         )
         + feature_brief(state),
         research_queries=[
-            "latest GitLab CI manual deploy stage and environments 2026",
-            "Jenkins declarative pipeline canary blue-green deploy with rollback 2026",
+            "GitHub Actions deploy environment required reviewers approval 2026",
+            "GitHub Actions canary blue-green deploy kubernetes with rollback 2026",
             "latest Kubernetes Deployment and Service apiVersion 2026",
             "current Terraform syntax and best practices 2026",
         ],
     )
     return {
-        "cd_config": files.get(".gitlab-ci.yml", files.get("Jenkinsfile", "")),
-        "gitlab_ci": files.get(".gitlab-ci.yml", ""),
-        "jenkinsfile": files.get("Jenkinsfile", ""),
+        "cd_config": files.get(".github/workflows/cd.yml", ""),
+        "cd_workflow": files.get(".github/workflows/cd.yml", ""),
         "iac": files.get("terraform/main.tf", ""),
         "k8s": "\n".join(content for path, content in files.items() if path.startswith("k8s/")),
         "source_files": files,
@@ -226,19 +223,19 @@ async def devops_docs_node(state: TeamState) -> TeamState:
     security_review = security.audit_report(
         dockerfile=state.get("dockerfile", ""),
         k8s=state.get("k8s", ""),
-        ci_config=state.get("gitlab_ci", ""),
-        pipeline=state.get("jenkinsfile", ""),
+        ci_config=state.get("ci_workflow", ""),
+        pipeline=state.get("cd_workflow", ""),
     )
     review_path = filesystem.write_doc(output_dir(state), "security_review.md", security_review)
     ui.written(relpath(state, [review_path]))
 
     user = (
-        "Document the infrastructure and deployment for this service. Cover the GitLab CI/CD "
-        "pipeline and how it integrates with Jenkins, the container image, the Terraform "
-        "resources, the Kubernetes manifests, the required environment / CI-CD variables and "
-        "Jenkins credentials and where they live, and the rollout/rollback strategy.\n\n"
-        f"### GitLab CI/CD (.gitlab-ci.yml)\n{state.get('gitlab_ci', '')}\n\n"
-        f"### Jenkins pipeline (Jenkinsfile)\n{state.get('jenkinsfile', '')}\n\n"
+        "Document the infrastructure and deployment for this service. Cover the GitHub "
+        "Actions CI and CD workflows, the container image, the Terraform resources, the "
+        "Kubernetes manifests, the required environment variables / GitHub Actions secrets "
+        "and where they live, and the rollout/rollback strategy.\n\n"
+        f"### GitHub Actions CI (.github/workflows/ci.yml)\n{state.get('ci_workflow', '')}\n\n"
+        f"### GitHub Actions CD (.github/workflows/cd.yml)\n{state.get('cd_workflow', '')}\n\n"
         f"### Dockerfile\n{state.get('dockerfile', '')}\n\n"
         f"### Terraform\n{state.get('iac', '')}\n\n"
         f"### Kubernetes\n{state.get('k8s', '')}\n"
@@ -249,7 +246,7 @@ async def devops_docs_node(state: TeamState) -> TeamState:
         user,
         state,
         research_queries=[
-            "GitLab CI Jenkins integration documentation best practices 2026",
+            "GitHub Actions CI/CD documentation best practices 2026",
             "latest infrastructure documentation and deployment runbook best practices 2026",
         ],
     )

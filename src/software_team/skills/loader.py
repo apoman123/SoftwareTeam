@@ -12,7 +12,7 @@ their engineering baseline frames every role-specific skill that follows.
 A third area, ``library/_shared/``, holds externally-sourced skills (each ``SKILL.md``
 cites its upstream project and licence) that several — but not all — characters reuse.
 ``SHARED_SKILLS`` maps each character to the shared skills it loads, so a single on-disk
-copy serves every character that needs it (e.g. the ``glab`` GitLab CLI skill is loaded by
+copy serves every character that needs it (e.g. the ``gh`` GitHub CLI skill is loaded by
 both the Software Engineer and DevOps/SRE). They are composed *after* a character's own
 role skills, as cross-cutting reference material.
 """
@@ -51,24 +51,25 @@ FOUNDATION_SKILLS = ("karpathy-guidelines", "follow-google-style")
 # in one place and loaded by the specific characters that need them. The mapping is the
 # single source of truth for "which agent loads which shared skill"; the skills compose
 # after a character's own role skills. Adding a name here makes that character load it —
-# no other code change. Sources: jenkins-expert (0xfurai/claude-code-subagents);
-# ci-cd-and-automation, security-and-hardening, git-workflow-and-versioning,
-# code-review-and-quality, documentation-and-adrs, performance-optimization
-# (addyosmani/agent-skills); gitlab-pipeline-watch, glab, commit-messages, mr-review,
-# self-service-performance-testing (gitlab-org/ai/skills); the DevSecOps set
-# (vulnerability-scanning, sast-scanning, dependency-scanning, sbom-supply-chain,
-# container-hardening, kubernetes-hardening) (BagelHole/DevOps-Security-Agent-Skills).
+# no other code change. Sources: github-actions-expert (retargeted from the jenkins-expert
+# subagent, 0xfurai/claude-code-subagents); ci-cd-and-automation, security-and-hardening,
+# git-workflow-and-versioning, code-review-and-quality, documentation-and-adrs,
+# performance-optimization (addyosmani/agent-skills); actions-workflow-watch, gh,
+# commit-messages, pr-review, self-service-performance-testing (retargeted from the GitLab
+# equivalents, gitlab-org/ai/skills); the DevSecOps set (vulnerability-scanning,
+# sast-scanning, dependency-scanning, sbom-supply-chain, container-hardening,
+# kubernetes-hardening) (BagelHole/DevOps-Security-Agent-Skills).
 SHARED = LIBRARY / "_shared"
 SHARED_SKILLS: dict[str, tuple[str, ...]] = {
-    "tech_lead": ("code-review-and-quality", "documentation-and-adrs", "mr-review"),
-    "software_engineer": ("git-workflow-and-versioning", "commit-messages", "glab"),
+    "tech_lead": ("code-review-and-quality", "documentation-and-adrs", "pr-review"),
+    "software_engineer": ("git-workflow-and-versioning", "commit-messages", "gh"),
     "qa_engineer": ("performance-optimization", "self-service-performance-testing"),
     "devops_sre": (
-        "jenkins-expert",
+        "github-actions-expert",
         "ci-cd-and-automation",
         "security-and-hardening",
-        "gitlab-pipeline-watch",
-        "glab",
+        "actions-workflow-watch",
+        "gh",
         # DevSecOps: shift-left scanning + container/K8s hardening woven into the pipeline.
         "vulnerability-scanning",
         "sast-scanning",

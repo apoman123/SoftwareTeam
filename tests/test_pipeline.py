@@ -46,8 +46,8 @@ def test_full_pipeline_dry_run(tmp_path):
         "frontend/package.json",
         "frontend/src/App.jsx",
         "Dockerfile",
-        ".gitlab-ci.yml",
-        "Jenkinsfile",
+        ".github/workflows/ci.yml",
+        ".github/workflows/cd.yml",
         "terraform/main.tf",
         "k8s/deployment.yaml",
         "monitoring/prometheus.yml",
@@ -69,14 +69,14 @@ def test_full_pipeline_dry_run(tmp_path):
     assert "Security Review (DevSecOps)" in security_review
     assert "_(fix needed)_" not in security_review
 
-    # GitLab CI is wired to Jenkins: the pipeline triggers a Jenkins build, and the
-    # Jenkinsfile is a declarative pipeline that deploys with an automatic rollback.
-    gitlab_ci = (tmp_path / ".gitlab-ci.yml").read_text()
-    assert "trigger-jenkins" in gitlab_ci
-    assert "JENKINS_URL" in gitlab_ci
-    jenkinsfile = (tmp_path / "Jenkinsfile").read_text()
-    assert "pipeline {" in jenkinsfile
-    assert "rollout undo" in jenkinsfile
+    # GitHub Actions wires CI + CD: the CI workflow gates pull requests with a shift-left
+    # security scan, and the CD workflow deploys with an automatic rollback.
+    ci_workflow = (tmp_path / ".github" / "workflows" / "ci.yml").read_text()
+    assert "on:" in ci_workflow and "pull_request" in ci_workflow
+    assert "container-scan" in ci_workflow
+    cd_workflow = (tmp_path / ".github" / "workflows" / "cd.yml").read_text()
+    assert "environment: production" in cd_workflow
+    assert "rollout undo" in cd_workflow
 
 
 def test_pipeline_skips_frontend_and_deployment_for_a_library(tmp_path):
@@ -115,8 +115,8 @@ def test_pipeline_skips_frontend_and_deployment_for_a_library(tmp_path):
         "docs/ux_design.md",
         "frontend/package.json",
         "Dockerfile",
-        ".gitlab-ci.yml",
-        "Jenkinsfile",
+        ".github/workflows/ci.yml",
+        ".github/workflows/cd.yml",
         "terraform/main.tf",
         "k8s/deployment.yaml",
         "monitoring/prometheus.yml",

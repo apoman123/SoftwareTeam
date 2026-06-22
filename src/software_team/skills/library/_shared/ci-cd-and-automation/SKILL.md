@@ -1,6 +1,6 @@
 ---
 name: ci-cd-and-automation
-description: Automates quality gates and deployment so no change ships without passing them. Use when setting up or modifying build/test/release pipelines (GitLab CI, Jenkins, GitHub Actions) or configuring deployment strategies.
+description: Automates quality gates and deployment so no change ships without passing them. Use when setting up or modifying build/test/release pipelines (GitHub Actions workflows) or configuring deployment strategies.
 ---
 
 # CI/CD and automation

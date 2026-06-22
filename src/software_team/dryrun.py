@@ -634,233 +634,137 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 """,
-    # GitLab CI/CD gates the merge request (lint + test), then hands off to Jenkins via the
-    # remote build API. $JENKINS_URL / $JENKINS_TOKEN are masked GitLab CI/CD variables.
-    ".gitlab-ci.yml": """\
-stages:
-  - lint
-  - test
-  - security
-  - integrate
+    # GitHub Actions gates every pull request (lint + test) and shifts security left with
+    # SAST, dependency, and image/config CVE scans. A red job blocks the merge.
+    ".github/workflows/ci.yml": """\
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
 
-default:
-  image: python:3.12-slim
-  before_script:
-    - pip install --no-cache-dir -r requirements.txt
+permissions:
+  contents: read
 
-lint:
-  stage: lint
-  script:
-    - pip install ruff
-    - ruff check .
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install --no-cache-dir -r requirements.txt ruff
+      - run: ruff check .
 
-test:
-  stage: test
-  script:
-    - pytest -q
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install --no-cache-dir -r requirements.txt
+      - run: pytest -q
 
-# DevSecOps: shift security left — SAST, dependency scan, and image/config CVE scan gate
-# the merge request before it can trigger the heavier Jenkins build.
-sast:
-  stage: security
-  script:
-    - pip install bandit
-    - bandit -r app -ll
+  # DevSecOps: shift security left — SAST, dependency scan, and image/config CVE scan gate
+  # the pull request before it can merge.
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit
+      - run: bandit -r app -ll
 
-dependency-scan:
-  stage: security
-  script:
-    - pip install pip-audit
-    - pip-audit -r requirements.txt
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt
 
-container-scan:
-  stage: security
-  image:
-    name: aquasec/trivy:latest
-    entrypoint: [""]
-  before_script: []
-  script:
-    - trivy config --exit-code 1 --severity HIGH,CRITICAL .
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed task-api:$CI_COMMIT_SHA
-
-trigger-jenkins:
-  stage: integrate
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
-  script:
-    - >
-      curl --fail -X POST
-      "$JENKINS_URL/job/task-api/buildWithParameters?token=$JENKINS_TOKEN&ref=$CI_COMMIT_REF_NAME&sha=$CI_COMMIT_SHA"
-""",
-    # Jenkins runs the heavier build; secrets come from the Jenkins credential store.
-    "Jenkinsfile": """\
-pipeline {
-  agent any
-  options {
-    timestamps()
-    disableConcurrentBuilds()
-  }
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-    stage('Install') {
-      steps {
-        sh 'pip install --no-cache-dir -r requirements.txt'
-      }
-    }
-    stage('Quality') {
-      parallel {
-        stage('Lint') {
-          steps {
-            sh 'pip install ruff && ruff check .'
-          }
-        }
-        stage('Test') {
-          steps {
-            sh 'pytest -q'
-          }
-        }
-      }
-    }
-  }
-  post {
-    success {
-      echo 'CI green — reporting success back to the GitLab merge request.'
-    }
-    failure {
-      echo 'CI failed — blocking the merge request.'
-    }
-  }
-}
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t task-api:${{ github.sha }} .
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: config
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: task-api:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
 """,
 }
 
 CD_FILES = {
-    # The full GitLab pipeline: the CI stages plus a manual production deploy that triggers
-    # the Jenkins deploy job (canary rollout). Same image artifact is promoted through.
-    ".gitlab-ci.yml": """\
-stages:
-  - lint
-  - test
-  - security
-  - integrate
-  - deploy
+    # GitHub Actions CD: build the image once, generate an SBOM, then deploy on `main`
+    # behind an environment approval with a canary rollout and automatic rollback on
+    # failure. The same image artifact is promoted through.
+    ".github/workflows/cd.yml": """\
+name: CD
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-default:
-  image: python:3.12-slim
-  before_script:
-    - pip install --no-cache-dir -r requirements.txt
+permissions:
+  contents: read
+  packages: write
 
-lint:
-  stage: lint
-  script:
-    - pip install ruff
-    - ruff check .
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
 
-test:
-  stage: test
-  script:
-    - pytest -q
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t task-api:${{ github.sha }} .
+      # DevSecOps: generate a CycloneDX SBOM for the built image and publish it.
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: task-api:${{ github.sha }}
+          format: cyclonedx-json
+          output-file: sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
 
-# DevSecOps: SAST + dependency scan + image/config CVE scan + SBOM gate the pipeline.
-sast:
-  stage: security
-  script:
-    - pip install bandit
-    - bandit -r app -ll
-
-dependency-scan:
-  stage: security
-  script:
-    - pip install pip-audit
-    - pip-audit -r requirements.txt
-
-container-scan:
-  stage: security
-  image:
-    name: aquasec/trivy:latest
-    entrypoint: [""]
-  before_script: []
-  script:
-    - trivy config --exit-code 1 --severity HIGH,CRITICAL .
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed task-api:$CI_COMMIT_SHA
-
-sbom:
-  stage: security
-  image:
-    name: anchore/syft:latest
-    entrypoint: [""]
-  before_script: []
-  script:
-    - syft task-api:$CI_COMMIT_SHA -o cyclonedx-json > sbom.json
-  artifacts:
-    paths:
-      - sbom.json
-
-trigger-jenkins:
-  stage: integrate
-  script:
-    - >
-      curl --fail -X POST
-      "$JENKINS_URL/job/task-api/buildWithParameters?token=$JENKINS_TOKEN&ref=$CI_COMMIT_REF_NAME&sha=$CI_COMMIT_SHA"
-
-deploy-production:
-  stage: deploy
-  environment:
-    name: production
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      when: manual
-  script:
-    - >
-      curl --fail -X POST
-      "$JENKINS_URL/job/task-api-deploy/buildWithParameters?token=$JENKINS_TOKEN&sha=$CI_COMMIT_SHA&strategy=canary"
-""",
-    # Jenkins owns build + deploy with a safe rollout and an automatic rollback on failure.
-    "Jenkinsfile": """\
-pipeline {
-  agent any
-  options {
-    timestamps()
-    disableConcurrentBuilds()
-  }
-  environment {
-    IMAGE = "task-api:${env.GIT_COMMIT}"
-  }
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-    stage('Build image') {
-      steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'registry',
-            usernameVariable: 'REG_USER',
-            passwordVariable: 'REG_PASS')]) {
-          sh 'docker build -t $IMAGE .'
-        }
-      }
-    }
-    stage('Deploy (canary -> full)') {
-      steps {
-        sh 'kubectl set image deploy/task-api task-api=$IMAGE -n task-api'
-        sh 'kubectl rollout status deploy/task-api -n task-api --timeout=120s'
-      }
-    }
-  }
-  post {
-    failure {
-      echo 'Health check failed — rolling back.'
-      sh 'kubectl rollout undo deploy/task-api -n task-api'
-    }
-  }
-}
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+    # Required reviewers on the `production` environment gate the deploy (manual approval).
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy (canary -> full)
+        run: |
+          kubectl set image deploy/task-api task-api=task-api:${{ github.sha }} -n task-api
+          kubectl rollout status deploy/task-api -n task-api --timeout=120s
+      - name: Roll back on failed health check
+        if: failure()
+        run: kubectl rollout undo deploy/task-api -n task-api
 """,
     "terraform/main.tf": """\
 terraform {
@@ -1203,14 +1107,15 @@ _INFRA_DOC = """\
 Where and how the service runs, for on-call and platform engineers. Pair this with the
 [on-call runbook](runbook.md), which covers what to do when an alert fires.
 
-## Pipelines (GitLab CI integrated with Jenkins)
-- **GitLab CI** (`.gitlab-ci.yml`) — on every merge request: install deps, lint, and run
-  `pytest`. A green pipeline gates merges to `main`. Its final `trigger-jenkins` job calls
-  Jenkins' remote build API (`$JENKINS_URL` / `$JENKINS_TOKEN` are masked CI/CD variables),
-  and a manual `deploy-production` job triggers the Jenkins deploy job on `main`.
-- **Jenkins** (`Jenkinsfile`) — a Declarative pipeline that runs the heavier build and
-  deploy: build the image, roll it out (canary → full), and automatically roll back on a
-  failed health check. Secrets come from the Jenkins credential store, never git.
+## Pipelines (GitHub Actions)
+- **CI** (`.github/workflows/ci.yml`) — on every pull request (and push to `main`):
+  install deps, lint, run `pytest`, plus the shift-left security jobs (SAST, dependency
+  scan, and a Trivy image/config scan). A green run gates merges to `main` via branch
+  protection.
+- **CD** (`.github/workflows/cd.yml`) — on push to `main` (or `workflow_dispatch`): build
+  the image, generate an SBOM, then deploy behind the `production` environment's required
+  reviewers, rolling out (canary → full) and automatically rolling back on a failed health
+  check. Secrets are read from GitHub Actions encrypted secrets, never git.
 
 ## Container image
 - Built from `python:3.12-slim` (see `Dockerfile`); started with
@@ -1227,9 +1132,9 @@ Where and how the service runs, for on-call and platform engineers. Pair this wi
 ## Configuration
 | Variable | Where it lives | Purpose |
 |----------|----------------|---------|
-| `CI_COMMIT_SHA` | GitLab CI (built-in) | Image version/tag to deploy |
-| `JENKINS_URL` / `JENKINS_TOKEN` | GitLab CI/CD variables (masked) | Trigger the Jenkins job |
-| Registry / cloud creds | Jenkins credential store (never git) | Push images, deploy |
+| `github.sha` | GitHub Actions (built-in) | Image version/tag to deploy |
+| Registry / cloud creds | GitHub Actions secrets (repo or `production` environment) | Push images, deploy |
+| Production approval | `production` environment required reviewers | Gate the deploy |
 
 ## Rollout & rollback
 - **Rollout:** canary first, then promote to full once healthy.

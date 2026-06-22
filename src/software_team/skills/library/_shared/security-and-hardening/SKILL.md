@@ -14,8 +14,8 @@ external systems — not a final phase.
   reject by default, allow-list what is expected.
 - **Parameterise queries** and use safe serialisers — never build SQL/commands by string
   concatenation.
-- **Keep secrets out of git.** Inject them from a secret store / CI-CD masked variables
-  (GitLab CI/CD variables, Jenkins credentials); commit only `.env.example`.
+- **Keep secrets out of git.** Inject them from a secret store / CI secrets
+  (GitHub Actions encrypted repository or environment secrets); commit only `.env.example`.
 - **Authorise every request** server-side; never trust client-supplied identity or roles.
 - **Least privilege** for tokens, deploy keys, and service accounts; scope and rotate them.
 

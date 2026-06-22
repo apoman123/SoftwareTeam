@@ -56,15 +56,17 @@ catalogue.
 | 🧪 **QA / SDET** | Plan + Deploy + Document | `design-test-cases`, `analyze-edge-cases`, `write-e2e-tests`, `plan-performance-tests`, `execute-tests`, `inspect-project`, `write-test-report` |
 | 🚀 **DevOps / SRE** | Code + Deploy + Operate + Document | `containerize-service`, `build-ci-pipeline`, `build-cd-pipeline`, `write-infrastructure-code`, `write-k8s-manifests`, `configure-observability`, `write-runbook`, `audit-container-security`, `document-infrastructure` |
 
-The CI/CD that DevOps/SRE generates is **GitLab CI integrated with Jenkins**: a
-`.gitlab-ci.yml` lints and tests every merge request and then triggers a `Jenkinsfile`
-(Declarative pipeline) for the heavier build and a safe, rollback-capable deploy. Several
-characters also load **external, attributed skills** (Jenkins, GitLab, code-review,
-performance) — see [External skills](#external-skills-shared-with-attribution) below.
+The CI/CD that DevOps/SRE generates is **GitHub Actions**: a `.github/workflows/ci.yml`
+lints, tests, and security-scans every pull request, and a `.github/workflows/cd.yml`
+builds the image and runs a safe, rollback-capable deploy behind a gated `production`
+environment. Several characters also load **external, attributed skills** (GitHub Actions,
+code-review, performance) — see [External skills](#external-skills-shared-with-attribution)
+below.
 
 **DevSecOps for the DevOps/SRE.** The pipeline shifts security left: the generated
-`.gitlab-ci.yml` adds a `security` stage (SAST, dependency/SCA scan, and a Trivy image+config
-CVE scan that fails on HIGH/CRITICAL, plus an SBOM), the Dockerfile and Kubernetes manifests
+`.github/workflows/ci.yml` adds security jobs (SAST, dependency/SCA scan, and a Trivy
+image+config CVE scan that fails on HIGH/CRITICAL) and `cd.yml` generates an SBOM; the
+Dockerfile and Kubernetes manifests
 are hardened (non-root, pinned image, dropped capabilities, read-only root filesystem,
 resource limits), and the 🚀 DevOps/SRE then runs an offline **security audit**
 (`skills/common/security.py`) over those artifacts, writing a pass/total review to
@@ -147,16 +149,16 @@ skills/
 Some skills are adapted from excellent open-source skill collections rather than authored
 from scratch. They live in `library/_shared/` (one on-disk copy, MIT-licensed sources
 cited in each `SKILL.md`) and `loader.py`'s **`SHARED_SKILLS`** map decides which
-characters load which — *"make the agents that need a skill load it"* — so e.g. the `glab`
-GitLab-CLI skill is shared by the Software Engineer and DevOps/SRE without duplication.
+characters load which — *"make the agents that need a skill load it"* — so e.g. the `gh`
+GitHub-CLI skill is shared by the Software Engineer and DevOps/SRE without duplication.
 They compose **after** a character's own role skills.
 
 | Character | Shared skills it loads | Source |
 |-----------|------------------------|--------|
-| 🧠 **Tech Lead** | `code-review-and-quality`, `documentation-and-adrs`, `mr-review` | addyosmani · GitLab |
-| 💻 **Software Engineer** | `git-workflow-and-versioning`, `commit-messages`, `glab` | addyosmani · GitLab |
+| 🧠 **Tech Lead** | `code-review-and-quality`, `documentation-and-adrs`, `pr-review` | addyosmani · GitLab |
+| 💻 **Software Engineer** | `git-workflow-and-versioning`, `commit-messages`, `gh` | addyosmani · GitLab |
 | 🧪 **QA / SDET** | `performance-optimization`, `self-service-performance-testing` | addyosmani · GitLab |
-| 🚀 **DevOps / SRE** | `jenkins-expert`, `ci-cd-and-automation`, `security-and-hardening`, `gitlab-pipeline-watch`, `glab`, `vulnerability-scanning`, `sast-scanning`, `dependency-scanning`, `sbom-supply-chain`, `container-hardening`, `kubernetes-hardening` | 0xfurai · addyosmani · GitLab · BagelHole |
+| 🚀 **DevOps / SRE** | `github-actions-expert`, `ci-cd-and-automation`, `security-and-hardening`, `actions-workflow-watch`, `gh`, `vulnerability-scanning`, `sast-scanning`, `dependency-scanning`, `sbom-supply-chain`, `container-hardening`, `kubernetes-hardening` | 0xfurai · addyosmani · GitLab · BagelHole |
 
 The DevOps/SRE's six DevSecOps skills (`vulnerability-scanning`, `sast-scanning`,
 `dependency-scanning`, `sbom-supply-chain`, `container-hardening`, `kubernetes-hardening`)
@@ -178,7 +180,7 @@ the skill's References section also cites the Google Testing Blog and Anthropic'
 
 Sources (all MIT-licensed; each `SKILL.md` carries the specific link):
 [`jenkins-expert`](https://github.com/0xfurai/claude-code-subagents/blob/main/agents/jenkins-expert.md)
-from **0xfurai/claude-code-subagents** ·
+from **0xfurai/claude-code-subagents** (retargeted to `github-actions-expert`) ·
 [**addyosmani/agent-skills**](https://github.com/addyosmani/agent-skills/tree/main/skills) ·
 [**gitlab-org/ai/skills**](https://gitlab.com/gitlab-org/ai/skills/-/tree/main/skills) ·
 [**nextlevelbuilder/ui-ux-pro-max-skill**](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) ·
@@ -457,8 +459,8 @@ frontend/                # the UI in the chosen frontend stack — only when nee
 tests/                   # unit tests + E2E API tests (run automatically by QA)
 requirements.txt         # the stack's dependency manifest (e.g. package.json / go.mod)
 Dockerfile               # hardened: non-root, pinned base, HEALTHCHECK — only when needs_deployment
-.gitlab-ci.yml           # GitLab CI/CD: lint + test + security scans, then trigger Jenkins (+ manual deploy)
-Jenkinsfile              # Jenkins Declarative pipeline: build + safe rollout with rollback
+.github/workflows/ci.yml # GitHub Actions CI: lint + test + security scans, gates the pull request
+.github/workflows/cd.yml # GitHub Actions CD: build + SBOM + gated deploy with safe rollout & rollback
 terraform/main.tf        # IaC
 k8s/                     # deployment (hardened securityContext + limits) and service
 monitoring/              # prometheus.yml, alerts.yml

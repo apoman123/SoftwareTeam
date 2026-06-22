@@ -7,8 +7,9 @@ tool: security_audit
 # Audit container & deployment security
 
 Before calling a deployment ready, run the `security_audit` tool over the artifacts you
-produced — the Dockerfile, the Kubernetes manifests, and the CI/CD config (`.gitlab-ci.yml`
-and `Jenkinsfile`). It returns a markdown DevSecOps review: a pass/total score, the
+produced — the Dockerfile, the Kubernetes manifests, and the GitHub Actions workflows
+(`.github/workflows/ci.yml` and `cd.yml`). It returns a markdown DevSecOps review: a
+pass/total score, the
 outstanding fixes first, then the full per-artifact checklist.
 
 It checks for:

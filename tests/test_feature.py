@@ -201,8 +201,8 @@ def test_feature_run_goes_through_full_cicd_devops_pipeline(feature_run):
     # Every CI/CD + DevOps + operate artifact was (re)generated for the feature.
     for rel in (
         "Dockerfile",
-        ".gitlab-ci.yml",
-        "Jenkinsfile",
+        ".github/workflows/ci.yml",
+        ".github/workflows/cd.yml",
         "terraform/main.tf",
         "k8s/deployment.yaml",
         "k8s/service.yaml",
@@ -215,11 +215,11 @@ def test_feature_run_goes_through_full_cicd_devops_pipeline(feature_run):
     ):
         assert (ws / rel).exists(), f"missing pipeline artifact: {rel}"
 
-    # The pipeline is wired (GitLab shift-left security stage + Jenkins trigger) and the
-    # DevSecOps audit gate is clean for the updated artifacts.
-    gitlab_ci = (ws / ".gitlab-ci.yml").read_text()
-    assert "trigger-jenkins" in gitlab_ci
-    assert "container-scan" in gitlab_ci
+    # The pipeline is wired (GitHub Actions shift-left security jobs + a gated production
+    # deploy) and the DevSecOps audit gate is clean for the updated artifacts.
+    ci_workflow = (ws / ".github/workflows/ci.yml").read_text()
+    assert "pull_request" in ci_workflow
+    assert "container-scan" in ci_workflow
     security_review = (ws / "docs" / "security_review.md").read_text()
     assert "Security Review (DevSecOps)" in security_review
     assert "_(fix needed)_" not in security_review

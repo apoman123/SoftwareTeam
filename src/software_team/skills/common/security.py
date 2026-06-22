@@ -1,7 +1,7 @@
 """DevSecOps audit — static, offline hardening review of generated artifacts.
 
 A dependency-free checker the DevOps/SRE character runs over the deployment artifacts it
-produces (Dockerfile, Kubernetes manifests, GitLab CI / Jenkins pipeline) to flag missing
+produces (Dockerfile, Kubernetes manifests, GitHub Actions workflows) to flag missing
 container/K8s hardening and absent security-scan gates, with a concrete fix for each
 finding. It performs no I/O and reaches no network, so it is deterministic and works in
 ``--dry-run``; it inspects text already in the team state rather than running real scanners.
@@ -182,9 +182,9 @@ def audit(
     Args:
         dockerfile: The Dockerfile contents (skipped when empty).
         k8s: The Kubernetes manifest contents (skipped when empty).
-        ci_config: The CI config (e.g. ``.gitlab-ci.yml``) contents.
-        pipeline: Additional pipeline text (e.g. a ``Jenkinsfile``) folded into the scan
-            checks alongside ``ci_config``.
+        ci_config: The CI workflow (e.g. ``.github/workflows/ci.yml``) contents.
+        pipeline: Additional workflow text (e.g. ``.github/workflows/cd.yml``) folded into
+            the scan checks alongside ``ci_config``.
 
     Returns:
         The list of findings across all provided artifacts.
@@ -213,8 +213,8 @@ def audit_report(
     Args:
         dockerfile: The Dockerfile contents.
         k8s: The Kubernetes manifest contents.
-        ci_config: The CI config (e.g. ``.gitlab-ci.yml``) contents.
-        pipeline: Additional pipeline text (e.g. a ``Jenkinsfile``).
+        ci_config: The CI workflow (e.g. ``.github/workflows/ci.yml``) contents.
+        pipeline: Additional workflow text (e.g. ``.github/workflows/cd.yml``).
 
     Returns:
         A markdown report grouped by artifact, with a pass/total summary and the
@@ -259,8 +259,8 @@ def security_audit(
 ) -> str:
     """Audit deployment artifacts for container/K8s hardening and CI security-scan gates.
 
-    Pass the Dockerfile, Kubernetes manifests, and CI/CD config (GitLab CI / Jenkinsfile)
-    text. Returns a markdown DevSecOps review: a pass/total score, the outstanding fixes,
-    and the full per-artifact checklist. Use before declaring a deployment ready.
+    Pass the Dockerfile, Kubernetes manifests, and GitHub Actions workflow (CI/CD) text.
+    Returns a markdown DevSecOps review: a pass/total score, the outstanding fixes, and the
+    full per-artifact checklist. Use before declaring a deployment ready.
     """
     return audit_report(dockerfile, k8s, ci_config, pipeline)

@@ -12,7 +12,7 @@ Treat commits as save points, branches as sandboxes, and history as documentatio
   integration — DORA research links trunk-based development to high-performing teams.
 - **Atomic commits.** One logical change per commit; it should build and pass tests on its
   own so it can be reverted or cherry-picked cleanly.
-- **Small PRs/MRs.** Keep a change set small and single-purpose — it reviews faster and
+- **Small PRs.** Keep a change set small and single-purpose — it reviews faster and
   regresses less. Split unrelated changes.
 - **Never rewrite shared history.** Rebase only your own un-pushed work; never force-push a
   shared branch.

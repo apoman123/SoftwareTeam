@@ -8,7 +8,7 @@ description: Runs static application security testing (SAST) on source code to c
 Static analysis reads the source (no running app) to find injection, hardcoded secrets,
 unsafe deserialisation, and similar bug classes early — the cheapest place to fix them.
 
-- **Add a CI stage** that runs a SAST scanner on every merge request:
+- **Add a CI job** that runs a SAST scanner on every pull request:
   [Semgrep](https://semgrep.dev/) (`semgrep ci` with the `p/ci` + language rulesets) is a
   fast default; CodeQL or SonarQube suit larger orgs. For Python, `bandit -r app/`.
 - **Make it a quality gate**: fail the pipeline on new HIGH/ERROR findings so they can't

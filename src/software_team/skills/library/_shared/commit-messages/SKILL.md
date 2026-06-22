@@ -12,7 +12,7 @@ A subject line completes the sentence **"If applied, this commit will _<subject>
   `feat:`, `fix:`, `refactor:`, `test:`).
 - **Subject:** imperative mood, capitalised, no trailing period, ≤ 50 characters.
 - **Body (when needed):** wrap at 72 characters; explain **why**, not what — the diff
-  already shows what. Reference issues/MRs.
+  already shows what. Reference issues/PRs.
 - **Atomic.** One logical change per commit so history is readable and releases are
   automatable.
 
